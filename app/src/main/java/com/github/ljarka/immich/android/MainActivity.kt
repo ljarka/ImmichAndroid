@@ -11,16 +11,13 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.github.ljarka.immich.android.server.ServerConfigurationScreen
+import com.github.ljarka.immich.android.init.InitScreen
 import com.github.ljarka.immich.android.ui.theme.ImmichAndroidTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
 
 @Serializable
-object ServerConfiguration
-
-@Serializable
-object Login
+object Init
 
 @Serializable
 object Timeline
@@ -36,21 +33,13 @@ class MainActivity : ComponentActivity() {
             ImmichAndroidTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
 
-                    NavHost(navController = navController, startDestination = ServerConfiguration) {
-                        composable<ServerConfiguration> {
-                            ServerConfigurationScreen(
+                    NavHost(navController = navController, startDestination = Init) {
+                        composable<Init> {
+                            InitScreen(
                                 modifier = Modifier.padding(innerPadding),
-                                onServerConfigured = {
-                                    navController.navigate(Login)
-                                }
-                            )
-                        }
-                        composable<Login> {
-                            LoginScreen(
-                                onAccept = {
+                                onInitialized = {
                                     navController.navigate(Timeline)
-                                },
-                                modifier = Modifier.padding(innerPadding),
+                                }
                             )
                         }
 

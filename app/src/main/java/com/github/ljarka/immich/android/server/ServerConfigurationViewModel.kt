@@ -8,14 +8,12 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ServerConfigurationViewModel @Inject constructor(
-    private val serverUrlProvider: ServerUrlProvider
+    private val serverUrlStore: ServerUrlStore
 ) : ViewModel() {
-
-    val state = serverUrlProvider.url
 
     fun setServerUrl(url: String) {
         viewModelScope.launch {
-            serverUrlProvider.updateUrl(url)
+            serverUrlStore.serverUrl = url
         }
     }
 }

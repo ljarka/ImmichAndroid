@@ -1,8 +1,8 @@
-package com.github.ljarka.immich.android.server
+package com.github.ljarka.immich.android.preferences
 
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 
-val Context.serverStore: DataStore<Preferences> by preferencesDataStore(name = "Server")
+val Context.defaultPreferences: DataStore<Preferences> by preferencesDataStore(name = "Default")
