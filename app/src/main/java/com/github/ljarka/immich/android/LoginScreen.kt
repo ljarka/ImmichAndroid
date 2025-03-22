@@ -1,5 +1,6 @@
 package com.github.ljarka.immich.android
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,11 +14,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun LoginScreen(
-    onAccept: () -> Unit = {},
+    onAccept: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -28,14 +30,28 @@ fun LoginScreen(
         var login by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
 
-        TextField(value = login, onValueChange = {
-            login = it
-        })
-        TextField(value = password, onValueChange = {
-            password = it
-        })
+        Image(
+            painter = painterResource(R.drawable.immich_logo),
+            contentDescription = null
+        )
+        TextField(
+            value = login,
+            label = {
+                Text("Email")
+            },
+            onValueChange = {
+                login = it
+            })
+        TextField(
+            value = password,
+            label = {
+                Text("Password")
+            },
+            onValueChange = {
+                password = it
+            })
         Button(onClick = onAccept) {
-            Text(text = "Accept")
+            Text(text = "Login")
         }
     }
 }

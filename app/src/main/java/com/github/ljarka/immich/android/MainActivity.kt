@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
                         composable<ServerConfiguration> {
                             ServerConfigurationScreen(
                                 modifier = Modifier.padding(innerPadding),
-                                onAccept = {
+                                onServerConfigured = {
                                     navController.navigate(Login)
                                 }
                             )
