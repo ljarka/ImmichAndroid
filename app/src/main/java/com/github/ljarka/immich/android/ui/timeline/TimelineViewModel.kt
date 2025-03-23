@@ -46,22 +46,24 @@ class TimelineViewModel @Inject constructor(
         if (job == null || !job.isActive) {
             assetFetchingJobs[bucket] = viewModelScope.launch(Dispatchers.IO) {
                 val assets = timelineRepository.getAssets(bucket).map {
+                    val ratio = it.exifInfo.exifImageWidth.toFloat() / it.exifInfo.exifImageHeight
                     AssetUi(
                         buildImageUrl(it.id),
-                        span = if (it.exifInfo.exifImageWidth < it.exifInfo.exifImageHeight) 1 else 3
+                        span = if (ratio >= 1.5) 4 else if (ratio >= 1.35) 3 else if (ratio >= 1) 2 else 1
                     )
                 }
                 val result = mutableListOf<AssetUi>()
+                val spanMax = 4
                 var spanSum = 0
                 assets.forEach {
                     spanSum = spanSum + it.span
-                    if (spanSum == 3) {
+                    if (spanSum == spanMax) {
                         result.add(it)
                         spanSum = 0
-                    } else if (spanSum < 3) {
+                    } else if (spanSum < spanMax) {
                         result.add(it)
                     } else {
-                        val span = it.span - (spanSum - 3)
+                        val span = it.span - (spanSum - spanMax)
 
                         if (span == 0) {
                             result.add(it.copy(span = 1))

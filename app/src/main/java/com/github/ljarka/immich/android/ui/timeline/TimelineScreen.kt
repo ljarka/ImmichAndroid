@@ -1,5 +1,6 @@
 package com.github.ljarka.immich.android.ui.timeline
 
+import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,9 +35,10 @@ fun TimelineScreen(modifier: Modifier = Modifier) {
 
     val viewModel: TimelineViewModel = hiltViewModel()
     val state = viewModel.state.collectAsStateWithLifecycle()
+    val orientation = LocalConfiguration.current.orientation
 
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 128.dp),
+        columns = if (orientation == ORIENTATION_PORTRAIT) GridCells.Fixed(4) else GridCells.Fixed(8),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(4.dp)
     ) {
@@ -61,8 +64,8 @@ fun TimelineScreen(modifier: Modifier = Modifier) {
                         index
                     )
                     if (asset == null) {
-                        if (index % 4 == 0) {
-                            GridItemSpan(3)
+                        if (index % 5 == 0) {
+                            GridItemSpan(4)
                         } else {
                             GridItemSpan(1)
                         }
