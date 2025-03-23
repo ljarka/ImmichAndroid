@@ -1,4 +1,4 @@
-package com.github.ljarka.immich.android.preferences
+package com.github.ljarka.immich.android.ui.preferences
 
 interface PreferencesStore {
 

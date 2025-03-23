@@ -1,9 +1,9 @@
-package com.github.ljarka.immich.android.login
+package com.github.ljarka.immich.android.ui.login
 
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import com.github.ljarka.immich.android.preferences.EncryptedPreferences
-import com.github.ljarka.immich.android.preferences.PreferencesStore
+import com.github.ljarka.immich.android.ui.preferences.EncryptedPreferences
+import com.github.ljarka.immich.android.ui.preferences.PreferencesStore
 import javax.inject.Inject
 import javax.inject.Singleton
 

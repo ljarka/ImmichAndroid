@@ -1,4 +1,4 @@
-package com.github.ljarka.immich.android.login
+package com.github.ljarka.immich.android.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

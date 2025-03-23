@@ -1,9 +1,9 @@
-package com.github.ljarka.immich.android.init
+package com.github.ljarka.immich.android.ui.init
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.github.ljarka.immich.android.login.AccessTokenStore
-import com.github.ljarka.immich.android.server.ServerUrlStore
+import com.github.ljarka.immich.android.ui.login.AccessTokenStore
+import com.github.ljarka.immich.android.ui.server.ServerUrlStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted

@@ -1,4 +1,4 @@
-package com.github.ljarka.immich.android.preferences
+package com.github.ljarka.immich.android.ui.preferences
 
 import android.content.Context
 import androidx.datastore.core.DataStore

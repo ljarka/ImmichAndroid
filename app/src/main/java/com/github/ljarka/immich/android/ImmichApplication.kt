@@ -1,7 +1,32 @@
 package com.github.ljarka.immich.android
 
 import android.app.Application
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.crossfade
 import dagger.hilt.android.HiltAndroidApp
+import okhttp3.OkHttpClient
+import javax.inject.Inject
 
 @HiltAndroidApp
-class ImmichApplication : Application()
+class ImmichApplication : Application() {
+    @Inject
+    lateinit var okHttpClient: OkHttpClient
+
+    override fun onCreate() {
+        super.onCreate()
+        SingletonImageLoader.setSafe { context ->
+            ImageLoader.Builder(context)
+                .crossfade(true)
+                .components {
+                    add(
+                        OkHttpNetworkFetcherFactory(
+                            callFactory = { okHttpClient }
+                        )
+                    )
+                }
+                .build()
+        }
+    }
+}

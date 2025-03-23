@@ -1,4 +1,4 @@
-package com.github.ljarka.immich.android.server
+package com.github.ljarka.immich.android.ui.server
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

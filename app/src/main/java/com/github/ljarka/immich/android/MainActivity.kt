@@ -1,6 +1,7 @@
 package com.github.ljarka.immich.android
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,7 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.github.ljarka.immich.android.init.InitScreen
+import com.github.ljarka.immich.android.ui.init.InitScreen
+import com.github.ljarka.immich.android.ui.timeline.TimelineScreen
 import com.github.ljarka.immich.android.ui.theme.ImmichAndroidTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
@@ -32,19 +34,19 @@ class MainActivity : ComponentActivity() {
 
             ImmichAndroidTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-
                     NavHost(navController = navController, startDestination = Init) {
                         composable<Init> {
                             InitScreen(
                                 modifier = Modifier.padding(innerPadding),
                                 onInitialized = {
-                                    navController.navigate(Timeline)
+                                    navController.navigate(Timeline) {
+                                        popUpTo(Init) { inclusive = true }
+                                    }
                                 }
                             )
                         }
-
                         composable<Timeline> {
-                            TimeLineScreen()
+                            TimelineScreen()
                         }
                     }
                 }

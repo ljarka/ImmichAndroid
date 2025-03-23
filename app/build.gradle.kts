@@ -23,11 +23,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -44,6 +44,9 @@ android {
 
 dependencies {
     ksp(libs.hilt.android.compiler)
+    implementation(libs.error.prone.annotations)
+    implementation(libs.coil)
+    implementation(libs.coil.network.okhttp)
     implementation(libs.hilt.android)
     implementation(libs.kotlin.serialization.json)
     implementation(libs.navigation.compose)

@@ -1,4 +1,4 @@
-package com.github.ljarka.immich.android.server
+package com.github.ljarka.immich.android.ui.server
 
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.imePadding

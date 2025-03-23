@@ -1,4 +1,4 @@
-package com.github.ljarka.immich.android.init
+package com.github.ljarka.immich.android.ui.init
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.ljarka.immich.android.R
-import com.github.ljarka.immich.android.login.LoginContent
-import com.github.ljarka.immich.android.server.ServerConfigurationContent
+import com.github.ljarka.immich.android.ui.login.LoginContent
+import com.github.ljarka.immich.android.ui.server.ServerConfigurationContent
 
 @Composable
 fun InitScreen(
