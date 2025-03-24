@@ -4,7 +4,6 @@ import android.app.Application
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import coil3.request.crossfade
 import dagger.hilt.android.HiltAndroidApp
 import okhttp3.OkHttpClient
 import javax.inject.Inject
@@ -18,7 +17,6 @@ class ImmichApplication : Application() {
         super.onCreate()
         SingletonImageLoader.setSafe { context ->
             ImageLoader.Builder(context)
-                .crossfade(true)
                 .components {
                     add(
                         OkHttpNetworkFetcherFactory(

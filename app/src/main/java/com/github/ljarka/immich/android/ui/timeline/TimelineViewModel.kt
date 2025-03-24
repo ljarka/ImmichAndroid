@@ -2,7 +2,7 @@ package com.github.ljarka.immich.android.ui.timeline
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.github.ljarka.immich.android.ui.server.ServerUrlStore
+import com.github.ljarka.immich.android.UrlProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,7 +19,7 @@ import javax.inject.Inject
 @HiltViewModel
 class TimelineViewModel @Inject constructor(
     val timelineRepository: TimelineRepository,
-    val serverUrlStore: ServerUrlStore,
+    val urlProvider: UrlProvider,
 ) : ViewModel() {
 
     private val bucketsCache = mutableMapOf<String, List<AssetUi>>()
@@ -48,7 +48,8 @@ class TimelineViewModel @Inject constructor(
                 val assets = timelineRepository.getAssets(bucket).map {
                     val ratio = it.exifInfo.exifImageWidth.toFloat() / it.exifInfo.exifImageHeight
                     AssetUi(
-                        buildImageUrl(it.id),
+                        url = urlProvider.getThumbnail(it.id),
+                        id = it.id,
                         span = if (ratio >= 1.5) 4 else if (ratio >= 1.35) 3 else if (ratio >= 1) 2 else 1
                     )
                 }
@@ -85,9 +86,5 @@ class TimelineViewModel @Inject constructor(
         val date = OffsetDateTime.parse(date)
         val formatter = DateTimeFormatter.ofPattern("MMMM, yyyy", Locale.ENGLISH)
         return date.format(formatter)
-    }
-
-    private fun buildImageUrl(assetId: String): String {
-        return "${serverUrlStore.serverUrl}/api/assets/${assetId}/thumbnail"
     }
 }

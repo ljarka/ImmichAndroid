@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -17,22 +19,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.github.ljarka.immich.android.ui.image.ImageDetailsScreen
 import com.github.ljarka.immich.android.ui.init.InitScreen
 import com.github.ljarka.immich.android.ui.theme.ImmichAndroidTheme
 import com.github.ljarka.immich.android.ui.timeline.TimelineScreen
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.serialization.Serializable
 
-@Serializable
-object Init
+sealed class Screen(val route: String) {
+    object Init : Screen("init")
+    object Timeline : Screen("timeline")
+    object ImageDetails : Screen("imageDetails/{assetId}") {
+        fun createRoute(assetId: String) = "imageDetails/$assetId"
+    }
+}
 
-@Serializable
-object Timeline
-
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,9 +46,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val navController = rememberNavController()
-
             ImmichAndroidTheme {
-
                 val scrollBehavior = enterAlwaysScrollBehavior()
                 Scaffold(
                     modifier = Modifier
@@ -66,19 +70,49 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 ) { innerPadding ->
-                    NavHost(navController = navController, startDestination = Init) {
-                        composable<Init> {
-                            InitScreen(
-                                modifier = Modifier.padding(innerPadding),
-                                onInitialized = {
-                                    navController.navigate(Timeline) {
-                                        popUpTo(Init) { inclusive = true }
+                    SharedTransitionLayout {
+                        NavHost(
+                            navController = navController,
+                            startDestination = Screen.Init.route
+                        ) {
+                            composable(Screen.Init.route) {
+                                InitScreen(
+                                    modifier = Modifier.padding(innerPadding),
+                                    onInitialized = {
+                                        navController.navigate(Screen.Timeline.route) {
+                                            popUpTo(Screen.Init.route) { inclusive = true }
+                                        }
                                     }
-                                }
-                            )
-                        }
-                        composable<Timeline> {
-                            TimelineScreen(modifier = Modifier.padding(innerPadding))
+                                )
+                            }
+                            composable(Screen.Timeline.route) {
+                                TimelineScreen(
+                                    sharedTransitionScope = this@SharedTransitionLayout,
+                                    animatedVisibilityScope = this@composable,
+                                    modifier = Modifier.padding(innerPadding),
+                                    onImageClick = { assetId ->
+                                        navController.navigate(
+                                            Screen.ImageDetails.createRoute(assetId)
+                                        )
+                                    }
+                                )
+                            }
+                            composable(
+                                route = Screen.ImageDetails.route,
+                                arguments = listOf(navArgument("assetId") {
+                                    type = NavType.StringType
+                                })
+                            ) { backStackEntry ->
+                                val assetId = backStackEntry.arguments?.getString("assetId")
+                                ImageDetailsScreen(
+                                    sharedTransitionScope = this@SharedTransitionLayout,
+                                    animatedVisibilityScope = this@composable,
+                                    onDismissRequest = {
+                                        navController.popBackStack()
+                                    },
+                                    assetId = requireNotNull(assetId),
+                                )
+                            }
                         }
                     }
                 }

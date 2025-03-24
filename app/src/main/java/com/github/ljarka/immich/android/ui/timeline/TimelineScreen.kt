@@ -1,7 +1,11 @@
 package com.github.ljarka.immich.android.ui.timeline
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -30,15 +34,23 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.SubcomposeAsyncImage
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun TimelineScreen(modifier: Modifier = Modifier) {
+fun TimelineScreen(
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    onImageClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
 
     val viewModel: TimelineViewModel = hiltViewModel()
     val state = viewModel.state.collectAsStateWithLifecycle()
     val orientation = LocalConfiguration.current.orientation
 
     LazyVerticalGrid(
-        columns = if (orientation == ORIENTATION_PORTRAIT) GridCells.Fixed(4) else GridCells.Fixed(8),
+        columns = if (orientation == ORIENTATION_PORTRAIT) GridCells.Fixed(4) else GridCells.Fixed(
+            8
+        ),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(4.dp)
     ) {
@@ -77,14 +89,29 @@ fun TimelineScreen(modifier: Modifier = Modifier) {
                 key = { index -> "${bucket.timeBucket}_$index".hashCode() }) { index ->
 
 
-                GalleryItem(timeBucket = bucket.timeBucket, index = index, viewModel = viewModel)
+                GalleryItem(
+                    timeBucket = bucket.timeBucket,
+                    index = index,
+                    viewModel = viewModel,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    onImageClick = onImageClick
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun GalleryItem(timeBucket: String, index: Int, viewModel: TimelineViewModel) {
+private fun GalleryItem(
+    timeBucket: String,
+    index: Int,
+    viewModel: TimelineViewModel,
+    onImageClick: (String) -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+) {
     val itemLifecycleOwner = remember { ItemLifecycleOwner() }
     DisposableEffect(Unit) {
         itemLifecycleOwner.start()
@@ -104,16 +131,23 @@ private fun GalleryItem(timeBucket: String, index: Int, viewModel: TimelineViewM
         PlaceHolder(modifier = Modifier.padding(4.dp))
     } else {
         val asset = viewModel.getAsset(timeBucket, index)
-        SubcomposeAsyncImage(
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .padding(4.dp)
-                .height(170.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            model = asset?.url,
-            loading = { PlaceHolder() },
-            contentDescription = null,
-        )
+        with(sharedTransitionScope) {
+            SubcomposeAsyncImage(
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .sharedElement(
+                        rememberSharedContentState(key = asset?.id ?: ""),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                    .padding(4.dp)
+                    .height(170.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = { onImageClick(asset?.id ?: "") }),
+                model = asset?.url,
+                loading = { PlaceHolder() },
+                contentDescription = null,
+            )
+        }
     }
 }
 

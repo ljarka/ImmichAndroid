@@ -45,6 +45,7 @@ android {
 dependencies {
     ksp(libs.hilt.android.compiler)
     implementation(libs.error.prone.annotations)
+    implementation(libs.compose.animation)
     implementation(libs.coil)
     implementation(libs.coil.network.okhttp)
     implementation(libs.hilt.android)
