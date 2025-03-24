@@ -1,5 +1,6 @@
 package com.github.ljarka.immich.android.ui.image
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -17,6 +19,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -31,6 +34,10 @@ fun ImageDetailsScreen(
     onDismissRequest: () -> Unit,
     assetId: String,
 ) {
+    BackHandler(enabled = sharedTransitionScope.isTransitionActive) {
+        // do nothing
+    }
+
     val viewModel = hiltViewModel<ImageDetailsViewModel>()
     Scaffold(
         modifier = Modifier
@@ -46,7 +53,11 @@ fun ImageDetailsScreen(
                         modifier = Modifier
                             .padding(horizontal = 8.dp)
                             .size(32.dp)
-                            .clickable { onDismissRequest() },
+                            .clickable {
+                                if (!sharedTransitionScope.isTransitionActive) {
+                                    onDismissRequest()
+                                }
+                            },
                     )
                 },
             )
@@ -55,7 +66,11 @@ fun ImageDetailsScreen(
         with(sharedTransitionScope) {
             PinchToZoom(
                 modifier = Modifier.padding(innerPadding),
-                onDismissRequest = onDismissRequest
+                onDismissRequest = {
+                    if (!sharedTransitionScope.isTransitionActive) {
+                        onDismissRequest()
+                    }
+                }
             ) {
                 SubcomposeAsyncImage(
                     modifier = Modifier
@@ -63,7 +78,8 @@ fun ImageDetailsScreen(
                         .sharedElement(
                             rememberSharedContentState(key = assetId),
                             animatedVisibilityScope = animatedVisibilityScope,
-                        ),
+                        )
+                        .clip(RoundedCornerShape(8.dp)),
                     model = viewModel.getPreview(assetId),
                     contentDescription = null,
                     loading = {
