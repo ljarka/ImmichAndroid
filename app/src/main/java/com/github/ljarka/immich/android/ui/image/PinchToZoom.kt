@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -34,27 +35,33 @@ private sealed interface ZoomStatus {
 fun PinchToZoom(
     modifier: Modifier = Modifier,
     onDismissRequest: () -> Unit,
+    scale: Float = 1f,
+    offset: Offset = Offset.Zero,
+    onScaleChanged: (scale: Float) -> Unit,
+    onOffsetChanged: (offset: Offset) -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
 ) {
-    var targetOffsetX by remember { mutableFloatStateOf(0f) }
-    var targetOffsetY by remember { mutableFloatStateOf(0f) }
-    var targetScale by remember { mutableFloatStateOf(1f) }
-
-    val animatedOffsetX by animateFloatAsState(targetValue = targetOffsetX, label = "offsetX")
-    val animatedOffsetY by animateFloatAsState(targetValue = targetOffsetY, label = "offsetY")
-    val animatedScale: Float by animateFloatAsState(targetValue = targetScale, label = "scale")
+    val animatedOffsetX by animateFloatAsState(targetValue = offset.x, label = "offsetX")
+    val animatedOffsetY by animateFloatAsState(targetValue = offset.y, label = "offsetY")
+    val animatedScale: Float by animateFloatAsState(targetValue = scale, label = "scale")
 
     var centerX by remember { mutableFloatStateOf(0f) }
     var centerY by remember { mutableFloatStateOf(0f) }
 
     val transformableState =
         rememberTransformableState { zoomChange, offsetChange, rotationChange ->
-            targetScale = max(
-                ZoomStatus.Zoom1().scale,
-                minOf(targetScale * zoomChange, ZoomStatus.Zoom4().scale)
+            onScaleChanged(
+                max(
+                    ZoomStatus.Zoom1().scale,
+                    minOf(scale * zoomChange, ZoomStatus.Zoom4().scale)
+                )
             )
-            targetOffsetX = minOf(targetOffsetX + offsetChange.x * targetScale, centerX)
-            targetOffsetY = minOf(targetOffsetY + offsetChange.y * targetScale, centerY)
+            onOffsetChanged(
+                Offset(
+                    x = minOf(offset.x + offsetChange.x * scale, centerX),
+                    y = minOf(offset.y + offsetChange.y * scale, centerY)
+                )
+            )
         }
 
     Box(
@@ -64,31 +71,38 @@ fun PinchToZoom(
                 centerX = it.size.width / 2f
                 centerY = it.size.height / 2f
             }
-            .pointerInput(Unit) {
+            .pointerInput(scale, offset) {
                 detectTapGestures(
                     onDoubleTap = { offset ->
-                        if (targetScale <= ZoomStatus.Zoom1().scale) {
-                            targetOffsetX += (centerX - offset.x)
-                            targetOffsetY += (centerY - offset.y)
-                            targetScale = ZoomStatus.Zoom2().scale
-                        } else if (targetScale <= ZoomStatus.Zoom2().scale) {
-                            targetOffsetX += (centerX - offset.x) * targetScale
-                            targetOffsetY += (centerY - offset.y) * targetScale
-                            targetScale = ZoomStatus.Zoom4().scale
+                        if (scale <= ZoomStatus.Zoom1().scale) {
+                            onOffsetChanged(
+                                Offset(
+                                    x = (centerX - offset.x) * scale,
+                                    y = (centerY - offset.y) * scale,
+                                )
+                            )
+                            onScaleChanged(ZoomStatus.Zoom2().scale)
+                        } else if (scale <= ZoomStatus.Zoom2().scale) {
+                            onOffsetChanged(
+                                Offset(
+                                    x = (centerX - offset.x) * scale,
+                                    y = (centerY - offset.y) * scale,
+                                )
+                            )
+                            onScaleChanged(ZoomStatus.Zoom4().scale)
                         } else {
-                            targetScale = ZoomStatus.Zoom1().scale
-                            targetOffsetX = 0f
-                            targetOffsetY = 0f
+                            onScaleChanged(ZoomStatus.Zoom1().scale)
+                            onOffsetChanged(Offset.Zero)
                         }
                     })
             }
-            .pointerInput(Unit) {
+            .pointerInput(scale, offset) {
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
 
                         if (event.type == PointerEventType.Release) {
-                            if (targetScale == ZoomStatus.Zoom1().scale && (targetOffsetX != 0f || targetOffsetY != 0f)) {
+                            if (scale == ZoomStatus.Zoom1().scale && (offset.x != 0f || offset.y != 0f)) {
                                 onDismissRequest()
                             }
                         }
