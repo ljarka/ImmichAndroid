@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onPlaced
+import kotlin.math.max
 
 private sealed interface ZoomStatus {
     val scale: Float
@@ -48,9 +49,12 @@ fun PinchToZoom(
 
     val transformableState =
         rememberTransformableState { zoomChange, offsetChange, rotationChange ->
-            targetScale *= zoomChange
-            targetOffsetY += offsetChange.y * targetScale
-            targetOffsetX += offsetChange.x * targetScale
+            targetScale = max(
+                ZoomStatus.Zoom1().scale,
+                minOf(targetScale * zoomChange, ZoomStatus.Zoom4().scale)
+            )
+            targetOffsetX = minOf(targetOffsetX + offsetChange.x * targetScale, centerX)
+            targetOffsetY = minOf(targetOffsetY + offsetChange.y * targetScale, centerY)
         }
 
     Box(
