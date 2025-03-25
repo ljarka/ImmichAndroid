@@ -22,19 +22,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onPlaced
 import kotlin.math.max
 
-private sealed interface ZoomStatus {
-    val scale: Float
-
-    data class Zoom1(override val scale: Float = 1f) : ZoomStatus
-    data class Zoom2(override val scale: Float = 2f) : ZoomStatus
-    data class Zoom4(override val scale: Float = 4f) : ZoomStatus
-}
-
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun PinchToZoom(
     modifier: Modifier = Modifier,
-    onDismissRequest: () -> Unit,
+    onActionUp: (scale: Float, offset: Offset) -> Unit,
+    draggingEnabled: Boolean,
     scale: Float = 1f,
     offset: Offset = Offset.Zero,
     onScaleChanged: (scale: Float) -> Unit,
@@ -47,7 +40,6 @@ fun PinchToZoom(
 
     var centerX by remember { mutableFloatStateOf(0f) }
     var centerY by remember { mutableFloatStateOf(0f) }
-
     val transformableState =
         rememberTransformableState { zoomChange, offsetChange, rotationChange ->
             onScaleChanged(
@@ -56,7 +48,6 @@ fun PinchToZoom(
                     minOf(scale * zoomChange, ZoomStatus.Zoom4().scale)
                 )
             )
-
             val offsetX = calculateOffset(offset.x, offsetChange.x, centerX, scale)
             val offsetY = calculateOffset(offset.y, offsetChange.y, centerY, scale)
 
@@ -104,23 +95,19 @@ fun PinchToZoom(
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
-
                         if (event.type == PointerEventType.Release) {
-                            if (scale == ZoomStatus.Zoom1().scale && (offset.x != 0f || offset.y != 0f)) {
-                                onDismissRequest()
-                            }
+                            onActionUp(scale, offset)
                         }
                     }
                 }
             }
-
             .graphicsLayer {
                 scaleX = animatedScale
                 scaleY = animatedScale
                 translationX = animatedOffsetX
                 translationY = animatedOffsetY
             }
-            .transformable(state = transformableState),
+            .transformable(state = transformableState, enabled = draggingEnabled),
         contentAlignment = Alignment.Center,
     ) {
         content()
