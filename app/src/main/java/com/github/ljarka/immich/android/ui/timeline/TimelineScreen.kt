@@ -122,7 +122,6 @@ fun TimelineScreen(
                     count = bucket.count,
                     key = { index -> "${bucket.timeBucket}_$index".hashCode() }) { index ->
 
-
                     GalleryItem(
                         timeBucket = bucket.timeBucket,
                         index = index,
@@ -154,35 +153,34 @@ private fun GalleryItem(
             itemLifecycleOwner.stop()
         }
     }
-    val loadingState =
-        viewModel.assetLoadingState[timeBucket]?.collectAsStateWithLifecycle(
-            lifecycleOwner = itemLifecycleOwner
-        )
+    val assetLoading = viewModel.assetLoadingState[timeBucket]?.collectAsStateWithLifecycle(
+        lifecycleOwner = itemLifecycleOwner
+    )
+    val asset = viewModel.getAsset(timeBucket, index)
 
-    if (loadingState?.value == false) {
-        LaunchedEffect(timeBucket) {
-            viewModel.fetchAsset(timeBucket)
-        }
+    if (assetLoading?.value == false && asset == null) {
+        LaunchedEffect(timeBucket) { viewModel.fetchAsset(timeBucket) }
         PlaceHolder(modifier = Modifier.padding(4.dp))
-    } else {
-        val asset = viewModel.getAsset(timeBucket, index)
+    } else if (asset != null) {
         with(sharedTransitionScope) {
             SubcomposeAsyncImage(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .sharedElement(
-                        rememberSharedContentState(key = asset?.id ?: ""),
+                        state = rememberSharedContentState(key = asset.id),
                         animatedVisibilityScope = animatedVisibilityScope,
                     )
                     .padding(4.dp)
                     .height(170.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = { onImageClick(asset?.id ?: "") }),
-                model = asset?.url,
+                    .clickable(onClick = { onImageClick(asset.id) }),
+                model = asset.url,
                 loading = { PlaceHolder() },
                 contentDescription = null,
             )
         }
+    } else {
+        PlaceHolder()
     }
 }
 

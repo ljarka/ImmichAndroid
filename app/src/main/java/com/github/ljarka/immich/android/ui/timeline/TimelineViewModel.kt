@@ -1,5 +1,6 @@
 package com.github.ljarka.immich.android.ui.timeline
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.ljarka.immich.android.UrlProvider
@@ -86,5 +87,10 @@ class TimelineViewModel @Inject constructor(
         val date = OffsetDateTime.parse(date)
         val formatter = DateTimeFormatter.ofPattern("MMMM, yyyy", Locale.ENGLISH)
         return date.format(formatter)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        Log.d("lukjar", "onCleared")
     }
 }
