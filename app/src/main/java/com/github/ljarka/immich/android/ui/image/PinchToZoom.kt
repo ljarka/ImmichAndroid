@@ -56,10 +56,14 @@ fun PinchToZoom(
                     minOf(scale * zoomChange, ZoomStatus.Zoom4().scale)
                 )
             )
+
+            val offsetX = calculateOffset(offset.x, offsetChange.x, centerX, scale)
+            val offsetY = calculateOffset(offset.y, offsetChange.y, centerY, scale)
+
             onOffsetChanged(
                 Offset(
-                    x = minOf(offset.x + offsetChange.x * scale, centerX),
-                    y = minOf(offset.y + offsetChange.y * scale, centerY)
+                    x = offsetX,
+                    y = offsetY,
                 )
             )
         }
@@ -120,5 +124,14 @@ fun PinchToZoom(
         contentAlignment = Alignment.Center,
     ) {
         content()
+    }
+}
+
+private fun calculateOffset(value: Float, change: Float, center: Float, scale: Float): Float {
+    val newValue = value + change * scale
+    return if (value < 0) {
+        maxOf(newValue, -center * scale)
+    } else {
+        minOf(newValue, center * scale)
     }
 }
