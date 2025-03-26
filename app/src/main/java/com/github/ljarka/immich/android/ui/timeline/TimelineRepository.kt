@@ -102,7 +102,7 @@ class TimelineRepository @Inject constructor(
             }
 
             val bucket = timeBuckets[currentBucket.timeBucket.timeStamp]
-            bucket?.items?.get(index - assetsBefore)
+            bucket?.items?.getOrNull(index - assetsBefore)
         }
     }
 
