@@ -14,7 +14,7 @@ interface TimelineBucketsService {
 
     @GET("/api/timeline/bucket")
     suspend fun getBucket(
-        @Query("size") size: String,
+        @Query("size") size: String = "MONTH",
         @Query("timeBucket") timeBucket: String,
         @Query("withPartners") withPartners: Boolean = true,
         @Query("isArchived") isArchived: Boolean = false,

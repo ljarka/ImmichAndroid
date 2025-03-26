@@ -44,6 +44,9 @@ android {
 
 dependencies {
     ksp(libs.hilt.android.compiler)
+    ksp(libs.room.compiler)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
     implementation(libs.error.prone.annotations)
     implementation(libs.compose.animation)
     implementation(libs.coil)

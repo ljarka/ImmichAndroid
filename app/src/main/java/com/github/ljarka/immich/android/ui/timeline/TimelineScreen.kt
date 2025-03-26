@@ -89,7 +89,7 @@ fun TimelineScreen(
             contentPadding = PaddingValues(4.dp)
         ) {
             state.value.forEach { bucket ->
-                item(span = { GridItemSpan(maxLineSpan) }, key = bucket.timeBucket.hashCode()) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = bucket.timeStamp) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -106,7 +106,7 @@ fun TimelineScreen(
                 items(
                     span = { index ->
                         val asset = viewModel.getAsset(
-                            bucket.timeBucket,
+                            bucket.timeStamp,
                             index
                         )
                         if (asset == null) {
@@ -120,10 +120,10 @@ fun TimelineScreen(
                         }
                     },
                     count = bucket.count,
-                    key = { index -> "${bucket.timeBucket}_$index".hashCode() }) { index ->
+                    key = { index -> "${bucket.timeStamp}_$index".hashCode() }) { index ->
 
                     GalleryItem(
-                        timeBucket = bucket.timeBucket,
+                        timeBucket = bucket.timeStamp,
                         index = index,
                         viewModel = viewModel,
                         sharedTransitionScope = sharedTransitionScope,
@@ -139,7 +139,7 @@ fun TimelineScreen(
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun GalleryItem(
-    timeBucket: String,
+    timeBucket: Long,
     index: Int,
     viewModel: TimelineViewModel,
     onImageClick: (String) -> Unit,
@@ -153,12 +153,12 @@ private fun GalleryItem(
             itemLifecycleOwner.stop()
         }
     }
-    val assetLoading = viewModel.assetLoadingState[timeBucket]?.collectAsStateWithLifecycle(
+    val assetLoading = viewModel.getAssetLoadingState(timeBucket).collectAsStateWithLifecycle(
         lifecycleOwner = itemLifecycleOwner
     )
     val asset = viewModel.getAsset(timeBucket, index)
 
-    if (assetLoading?.value == false && asset == null) {
+    if (assetLoading.value == AssetState.DEFAULT && asset == null) {
         LaunchedEffect(timeBucket) { viewModel.fetchAsset(timeBucket) }
         PlaceHolder(modifier = Modifier.padding(4.dp))
     } else if (asset != null) {
@@ -180,7 +180,7 @@ private fun GalleryItem(
             )
         }
     } else {
-        PlaceHolder()
+        PlaceHolder(Modifier.padding(4.dp))
     }
 }
 

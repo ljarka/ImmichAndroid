@@ -10,7 +10,6 @@ data class Asset(
 
 @Serializable
 data class ExifInfo(
-    val orientation: String?,
     val exifImageWidth: Int,
     val exifImageHeight: Int,
 )

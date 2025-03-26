@@ -21,6 +21,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +38,7 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.delay
@@ -66,7 +69,6 @@ fun ImageDetailsScreen(
         }
     }
     BackHandler(enabled = true) { dismiss() }
-
     Scaffold(
         modifier = Modifier
             .fillMaxSize(),
@@ -88,53 +90,58 @@ fun ImageDetailsScreen(
         }
     ) { innerPadding ->
         with(sharedTransitionScope) {
-            var initialPage = 0
-            val pagerState = rememberPagerState(
-                pageCount = {
-                    10
-                },
-                initialPage = initialPage
-            )
+            val viewModel = hiltViewModel<ImageDetailsViewModel>()
+            var initialPage = viewModel.initialPage.collectAsStateWithLifecycle()
+            LaunchedEffect(assetId) { viewModel.checkInitialPage(assetId) }
 
-            HorizontalPager(
-                state = pagerState,
-                beyondViewportPageCount = 3,
-                userScrollEnabled = scale == 1f,
-                pageSpacing = 16.dp,
-                modifier = Modifier
-                    .pointerInput(imageSize) {
-                        detectTransformGestures { centroid: Offset, pan: Offset, zoom: Float, rotation: Float ->
-                            val offsetX =
-                                calculateOffset(offset.x, pan.x, imageSize.width / 2f, scale)
-                            val offsetY =
-                                calculateOffset(offset.y, pan.y, imageSize.height / 2f, scale)
-                            offset = Offset(
-                                x = offsetX,
-                                y = offsetY,
-                            )
-                            scale = max(
-                                ZoomStatus.Zoom1().scale,
-                                minOf(scale * zoom, ZoomStatus.Zoom4().scale)
-                            )
+            if (initialPage.value != null) {
+                val pagerState = rememberPagerState(
+                    pageCount = {
+                        viewModel.getNumberOfPages()
+                    },
+                    initialPage = initialPage.value?.index ?: 0,
+                )
+                HorizontalPager(
+                    state = pagerState,
+                    beyondViewportPageCount = 3,
+                    userScrollEnabled = scale == 1f,
+                    pageSpacing = 16.dp,
+                    modifier = Modifier
+                        .pointerInput(imageSize) {
+                            detectTransformGestures { centroid: Offset, pan: Offset, zoom: Float, rotation: Float ->
+                                val offsetX =
+                                    calculateOffset(offset.x, pan.x, imageSize.width / 2f, scale)
+                                val offsetY =
+                                    calculateOffset(offset.y, pan.y, imageSize.height / 2f, scale)
+                                offset = Offset(
+                                    x = offsetX,
+                                    y = offsetY,
+                                )
+                                scale = max(
+                                    ZoomStatus.Zoom1().scale,
+                                    minOf(scale * zoom, ZoomStatus.Zoom4().scale)
+                                )
+                            }
                         }
+                ) { page ->
+
+                    val isCurrentPage = page == pagerState.currentPage
+
+                    if (!(scale > 1f && !isCurrentPage)) {
+                        Page(
+                            modifier = Modifier.padding(innerPadding),
+                            isCurrentPage = isCurrentPage,
+                            assetId = assetId,
+                            scale = scale,
+                            offset = offset,
+                            page = page,
+                            dismissRequest = { dismiss() },
+                            onScaleChanged = { scale = it },
+                            onOffsetChanged = { offset = it },
+                            onImageSizeChanged = { imageSize = it },
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
                     }
-            ) { page ->
-
-                val isCurrentPage = page == pagerState.currentPage
-
-                if (!(scale > 1f && !isCurrentPage)) {
-                    Page(
-                        modifier = Modifier.padding(innerPadding),
-                        isCurrentPage = isCurrentPage,
-                        assetId = assetId,
-                        scale = scale,
-                        offset = offset,
-                        dismissRequest = { dismiss() },
-                        onScaleChanged = { scale = it },
-                        onOffsetChanged = { offset = it },
-                        onImageSizeChanged = { imageSize = it },
-                        animatedVisibilityScope = animatedVisibilityScope,
-                    )
                 }
             }
         }
@@ -149,6 +156,7 @@ private fun SharedTransitionScope.Page(
     assetId: String,
     scale: Float,
     offset: Offset,
+    page: Int,
     onScaleChanged: (scale: Float) -> Unit,
     onOffsetChanged: (offset: Offset) -> Unit,
     onImageSizeChanged: (size: IntSize) -> Unit,
@@ -168,24 +176,25 @@ private fun SharedTransitionScope.Page(
             }
         }
     ) {
+        val updatedAssetId = viewModel.getAssetId(page).collectAsState(assetId)
         SubcomposeAsyncImage(
             modifier = Modifier
                 .fillMaxWidth()
                 .onPlaced { onImageSizeChanged(it.size) }
                 .then(
                     if (isCurrentPage) Modifier.sharedElement(
-                        state = rememberSharedContentState(key = assetId),
+                        state = rememberSharedContentState(key = updatedAssetId.value),
                         animatedVisibilityScope = animatedVisibilityScope,
                     ) else Modifier
                 )
                 .clip(RoundedCornerShape(8.dp)),
-            model = viewModel.getPreview(assetId),
+            model = viewModel.getPreview(updatedAssetId.value),
             contentDescription = null,
             loading = {
                 AsyncImage(
                     modifier = Modifier
                         .fillMaxWidth(),
-                    model = viewModel.getThumbnail(assetId),
+                    model = viewModel.getThumbnail(updatedAssetId.value),
                     contentDescription = null,
                 )
             }
