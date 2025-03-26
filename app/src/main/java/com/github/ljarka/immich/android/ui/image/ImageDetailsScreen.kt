@@ -104,7 +104,7 @@ fun ImageDetailsScreen(
                 HorizontalPager(
                     state = pagerState,
                     beyondViewportPageCount = 3,
-                    userScrollEnabled = scale == 1f,
+                    userScrollEnabled = scale == 1f && !sharedTransitionScope.isTransitionActive,
                     pageSpacing = 16.dp,
                     modifier = Modifier
                         .pointerInput(imageSize) {

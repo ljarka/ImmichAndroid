@@ -8,6 +8,8 @@ import com.github.ljarka.immich.android.db.MonthBucketEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
@@ -25,7 +27,7 @@ data class AssetIndex(
     val assetId: String,
 )
 
-private data class BucketDescriptor(
+data class BucketDescriptor(
     val timeBucket: TimeBucketUi,
     var items: List<AssetUi>,
 )
@@ -38,9 +40,11 @@ class TimelineRepository @Inject constructor(
     private val urlProvider: UrlProvider,
 ) {
     private val imagesDao by lazy { imagesDatabase.imagesDao() }
-    private var timeBuckets: Map<Long, BucketDescriptor> = emptyMap()
+    private val _timeBuckets: MutableStateFlow<Map<Long, BucketDescriptor>> =
+        MutableStateFlow(emptyMap())
+    val timeBuckets = _timeBuckets.asStateFlow()
 
-    fun getAssetsCount(): Int = timeBuckets.values.sumOf { it.timeBucket.count }
+    fun getAssetsCount(): Int = _timeBuckets.value.values.sumOf { it.timeBucket.count }
 
     fun getTimeBuckets(): Flow<List<TimeBucketUi>> {
         return imagesDao.getMonthBuckets()
@@ -53,15 +57,23 @@ class TimelineRepository @Inject constructor(
                     )
                 }
             }.onEach {
-                if (timeBuckets.isEmpty()) {
-                    timeBuckets = it.associate {
+                if (_timeBuckets.value.isEmpty()) {
+                    _timeBuckets.value = it.runningFoldIndexed(
+                        TimeBucketUi()
+                    ) { index, acc, bucket ->
+                        TimeBucketUi(
+                            timeStamp = bucket.timeStamp,
+                            index = acc.index + acc.count,
+                            count = bucket.count,
+                            formattedDate = formatDate(Instant.ofEpochMilli(bucket.timeStamp))
+                        )
+                    }.drop(1).associate {
                         it.timeStamp to BucketDescriptor(
                             TimeBucketUi(
                                 timeStamp = it.timeStamp,
                                 count = it.count,
-                                formattedDate = formatDate(
-                                    Instant.ofEpochMilli(it.timeStamp)
-                                )
+                                formattedDate = it.formattedDate,
+                                index = it.index,
                             ), emptyList()
                         )
                     }
@@ -82,12 +94,13 @@ class TimelineRepository @Inject constructor(
     }
 
     fun getAsset(bucket: Long, position: Int): AssetUi? {
-        return timeBuckets[bucket]?.items?.getOrNull(position)
+        return _timeBuckets.value[bucket]?.items?.getOrNull(position)
     }
 
     suspend fun getAsset(index: Int): AssetUi? {
         return withContext(Dispatchers.Default) {
-            val sortedValues = timeBuckets.values.sortedByDescending { it.timeBucket.timeStamp }
+            val sortedValues =
+                _timeBuckets.value.values.sortedByDescending { it.timeBucket.timeStamp }
             var itemsCount = 0
             val bucketsBefore = sortedValues.takeWhile {
                 itemsCount += it.timeBucket.count
@@ -101,7 +114,7 @@ class TimelineRepository @Inject constructor(
                 fetchAssets(currentBucket.timeBucket.timeStamp)
             }
 
-            val bucket = timeBuckets[currentBucket.timeBucket.timeStamp]
+            val bucket = _timeBuckets.value[currentBucket.timeBucket.timeStamp]
             bucket?.items?.getOrNull(index - assetsBefore)
         }
     }
@@ -115,10 +128,11 @@ class TimelineRepository @Inject constructor(
             )
             updateDbAssets(bucket, remoteAssets)
             remoteAssets.map {
+                val ratio = calculateRatio(it.exifInfo)
                 AssetUi(
                     id = it.id,
                     url = urlProvider.getThumbnail(it.id),
-                    span = calculateSpan(ratio = it.exifInfo.exifImageWidth.toFloat() / it.exifInfo.exifImageHeight),
+                    span = calculateSpan(ratio = ratio),
                 )
             }
         } else {
@@ -126,7 +140,7 @@ class TimelineRepository @Inject constructor(
                 AssetUi(
                     id = it.assetId,
                     url = urlProvider.getThumbnail(it.assetId),
-                    span = calculateSpan(ratio = it.width.toFloat() / it.height),
+                    span = calculateSpan(ratio = calculateRatio(it.width ?: 1, it.height ?: 1)),
                 )
             }.also {
                 coroutineScope.launch(Dispatchers.IO) {
@@ -139,7 +153,7 @@ class TimelineRepository @Inject constructor(
                 }
             }
         }.also {
-            timeBuckets[bucket]?.items = adjustSpans(it)
+            _timeBuckets.value[bucket]?.items = adjustSpans(it)
         }
     }
 
@@ -194,7 +208,8 @@ class TimelineRepository @Inject constructor(
 
     suspend fun getIndexOfAsset(assetId: String): AssetIndex {
         return withContext(Dispatchers.Default) {
-            val sortedValues = timeBuckets.values.sortedByDescending { it.timeBucket.timeStamp }
+            val sortedValues =
+                _timeBuckets.value.values.sortedByDescending { it.timeBucket.timeStamp }
             val bucketsBefore = sortedValues.takeWhile {
                 it.items.indexOfFirst { it.id == assetId } == -1
             }
@@ -208,5 +223,20 @@ class TimelineRepository @Inject constructor(
                 assetId = assetId,
             )
         }
+    }
+
+    private fun calculateRatio(exifInfo: ExifInfo): Float {
+        return if (exifInfo.exifImageWidth == null || exifInfo.exifImageHeight == null) {
+            1f
+        } else {
+            calculateRatio(
+                exifInfo.exifImageWidth,
+                exifInfo.exifImageHeight,
+            )
+        }
+    }
+
+    private fun calculateRatio(with: Int, height: Int): Float {
+        return with.toFloat() / height.toFloat()
     }
 }

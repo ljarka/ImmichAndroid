@@ -13,6 +13,6 @@ data class AssetEntity(
     @ColumnInfo(name = "timestamp") val timestamp: Long,
     @ColumnInfo(name = "assetIndex") val assetIndex: Int,
     @ColumnInfo(name = "assetId") val assetId: String,
-    @ColumnInfo(name = "width") val width: Int,
-    @ColumnInfo(name = "height") val height: Int,
+    @ColumnInfo(name = "width") val width: Int?,
+    @ColumnInfo(name = "height") val height: Int?,
 )
