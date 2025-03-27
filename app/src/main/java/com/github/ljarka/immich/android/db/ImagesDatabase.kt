@@ -3,7 +3,7 @@ package com.github.ljarka.immich.android.db
 import androidx.room.Database
 import androidx.room.RoomDatabase
 
-@Database(entities = [AssetEntity::class, MonthBucketEntity::class], version = 3)
+@Database(entities = [AssetEntity::class, MonthBucketEntity::class], version = 4)
 abstract class ImagesDatabase : RoomDatabase() {
     abstract fun imagesDao(): ImagesDao
 }

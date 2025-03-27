@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
@@ -27,11 +28,6 @@ data class AssetIndex(
     val assetId: String,
 )
 
-data class BucketDescriptor(
-    val timeBucket: TimeBucketUi,
-    var items: List<AssetUi>,
-)
-
 @Singleton
 class TimelineRepository @Inject constructor(
     @AppScope val coroutineScope: CoroutineScope,
@@ -40,20 +36,26 @@ class TimelineRepository @Inject constructor(
     private val urlProvider: UrlProvider,
 ) {
     private val imagesDao by lazy { imagesDatabase.imagesDao() }
-    private val _timeBuckets: MutableStateFlow<Map<Long, BucketDescriptor>> =
+    private val _timeBuckets: MutableStateFlow<Map<Long, TimeBucketUi>> =
         MutableStateFlow(emptyMap())
     val timeBuckets = _timeBuckets.asStateFlow()
 
-    fun getAssetsCount(): Int = _timeBuckets.value.values.sumOf { it.timeBucket.count }
+    fun getAssetsCount(): Int = _timeBuckets.value.values.sumOf { it.count }
 
     fun getTimeBuckets(): Flow<List<TimeBucketUi>> {
         return imagesDao.getMonthBuckets()
-            .map {
-                it.map {
+            .map { buckets ->
+                buckets.map { bucketItem ->
                     TimeBucketUi(
-                        timeStamp = it.timestamp,
-                        count = it.count,
-                        formattedDate = formatDate(Instant.ofEpochMilli(it.timestamp))
+                        timeStamp = bucketItem.timestamp,
+                        count = bucketItem.count,
+                        formattedDate = formatDate(Instant.ofEpochMilli(bucketItem.timestamp)),
+                        spans = bucketItem.rowsNumber?.let {
+                            distributeSpans(
+                                itemCount = bucketItem.count,
+                                rowCount = it
+                            )
+                        } ?: emptyList(),
                     )
                 }
             }.onEach {
@@ -65,31 +67,44 @@ class TimelineRepository @Inject constructor(
                             timeStamp = bucket.timeStamp,
                             index = acc.index + acc.count,
                             count = bucket.count,
-                            formattedDate = formatDate(Instant.ofEpochMilli(bucket.timeStamp))
+                            formattedDate = formatDate(Instant.ofEpochMilli(bucket.timeStamp)),
+                            spans = bucket.spans,
                         )
                     }.drop(1).associate {
-                        it.timeStamp to BucketDescriptor(
-                            TimeBucketUi(
-                                timeStamp = it.timeStamp,
-                                count = it.count,
-                                formattedDate = it.formattedDate,
-                                index = it.index,
-                            ), emptyList()
+                        it.timeStamp to TimeBucketUi(
+                            timeStamp = it.timeStamp,
+                            count = it.count,
+                            formattedDate = it.formattedDate,
+                            index = it.index,
+                            spans = it.spans,
                         )
                     }
                 }
             }
             .onStart {
+                val dbBuckets = imagesDao.getMonthBuckets().firstOrNull()
+                val dbRowsNumbers = dbBuckets?.associate { it.timestamp to it.rowsNumber }
                 val buckets = timelineBucketsService.getTimeBuckets()
                     .map {
                         MonthBucketEntity(
                             timestamp = Instant.parse(it.timeBucket).toEpochMilli(),
                             count = it.count,
                         )
+                    }.map {
+                        it.copy(rowsNumber = dbRowsNumbers?.get(it.timestamp))
                     }
-                imagesDao.insertMonthBuckets(
-                    buckets
-                )
+                imagesDao.insertMonthBuckets(buckets)
+
+                val uiBuckets = buckets.map { item ->
+                    TimeBucketUi(
+                        timeStamp = item.timestamp,
+                        count = item.count,
+                        formattedDate = formatDate(Instant.ofEpochMilli(item.timestamp)),
+                        spans = item.rowsNumber?.let { distributeSpans(item.count, it) }
+                            ?: emptyList()
+                    )
+                }
+                emit(uiBuckets)
             }
     }
 
@@ -100,21 +115,21 @@ class TimelineRepository @Inject constructor(
     suspend fun getAsset(index: Int): AssetUi? {
         return withContext(Dispatchers.Default) {
             val sortedValues =
-                _timeBuckets.value.values.sortedByDescending { it.timeBucket.timeStamp }
+                _timeBuckets.value.values.sortedByDescending { it.timeStamp }
             var itemsCount = 0
             val bucketsBefore = sortedValues.takeWhile {
-                itemsCount += it.timeBucket.count
+                itemsCount += it.count
                 itemsCount < index
             }
-            val assetsBefore = bucketsBefore.sumOf { it.timeBucket.count }
+            val assetsBefore = bucketsBefore.sumOf { it.count }
             val currentBucketIndex = bucketsBefore.size
             val currentBucket = sortedValues[currentBucketIndex]
 
             if (currentBucket.items.isEmpty()) {
-                fetchAssets(currentBucket.timeBucket.timeStamp)
+                fetchAssets(currentBucket.timeStamp)
             }
 
-            val bucket = _timeBuckets.value[currentBucket.timeBucket.timeStamp]
+            val bucket = _timeBuckets.value[currentBucket.timeStamp]
             bucket?.items?.getOrNull(index - assetsBefore)
         }
     }
@@ -153,34 +168,11 @@ class TimelineRepository @Inject constructor(
                 }
             }
         }.also {
-            _timeBuckets.value[bucket]?.items = adjustSpans(it)
+            val items = adjustSpans(it)
+            val rows = (items.sumOf { it.span } + 3) / 4
+            imagesDao.updateBucket(MonthBucketEntity(bucket, items.size, rows))
+            _timeBuckets.value[bucket]?.items = items
         }
-    }
-
-    private fun adjustSpans(assets: List<AssetUi>): List<AssetUi> {
-        val result = mutableListOf<AssetUi>()
-        val spanMax = 4
-        var spanSum = 0
-        assets.forEach {
-            spanSum = spanSum + it.span
-            if (spanSum == spanMax) {
-                result.add(it)
-                spanSum = 0
-            } else if (spanSum < spanMax) {
-                result.add(it)
-            } else {
-                val span = it.span - (spanSum - spanMax)
-
-                if (span == 0) {
-                    result.add(it.copy(span = 1))
-                    spanSum = 1
-                } else {
-                    result.add(it.copy(span = span))
-                    spanSum = 0
-                }
-            }
-        }
-        return result
     }
 
     private suspend fun updateDbAssets(bucket: Long, assets: List<Asset>) {
@@ -209,12 +201,12 @@ class TimelineRepository @Inject constructor(
     suspend fun getIndexOfAsset(assetId: String): AssetIndex {
         return withContext(Dispatchers.Default) {
             val sortedValues =
-                _timeBuckets.value.values.sortedByDescending { it.timeBucket.timeStamp }
+                _timeBuckets.value.values.sortedByDescending { it.timeStamp }
             val bucketsBefore = sortedValues.takeWhile {
                 it.items.indexOfFirst { it.id == assetId } == -1
             }
             val currentBucketIndex = bucketsBefore.size
-            val numberOfItemsInBucketsBefore = bucketsBefore.sumOf { it.timeBucket.count }
+            val numberOfItemsInBucketsBefore = bucketsBefore.sumOf { it.count }
 
             val bucket = sortedValues[currentBucketIndex]
             val indexInBucket = bucket.items.indexOfFirst { it.id == assetId }
@@ -234,6 +226,57 @@ class TimelineRepository @Inject constructor(
                 exifInfo.exifImageHeight,
             )
         }
+    }
+
+    private fun distributeSpans(itemCount: Int, rowCount: Int, columns: Int = 4): List<Int> {
+        val totalSlots = rowCount * columns
+        var extraSlots = totalSlots - itemCount
+        val spans = MutableList(itemCount) { 1 }
+
+        var index = 0
+        var delta = 1
+        while (extraSlots > 1) {
+            spans[index] += delta
+            index++
+            extraSlots -= delta
+
+            if (index == itemCount) {
+                index = 0
+                delta = 2
+            }
+        }
+
+        if (extraSlots == 1) {
+            spans[index] += 1
+        }
+
+        return spans
+    }
+
+    private fun adjustSpans(assets: List<AssetUi>): List<AssetUi> {
+        val result = mutableListOf<AssetUi>()
+        val spanMax = 4
+        var spanSum = 0
+        assets.forEach {
+            spanSum = spanSum + it.span
+            if (spanSum == spanMax) {
+                result.add(it)
+                spanSum = 0
+            } else if (spanSum < spanMax) {
+                result.add(it)
+            } else {
+                val span = it.span - (spanSum - spanMax)
+
+                if (span == 0) {
+                    result.add(it.copy(span = 1))
+                    spanSum = 1
+                } else {
+                    result.add(it.copy(span = span))
+                    spanSum = 0
+                }
+            }
+        }
+        return result
     }
 
     private fun calculateRatio(with: Int, height: Int): Float {

@@ -40,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -120,21 +121,16 @@ fun TimelineScreen(
                         )
                     }
                 }
-
                 items(
                     span = { index ->
-                        val asset = viewModel.getAsset(
-                            bucket.timeStamp,
-                            index
-                        )
-                        if (asset == null) {
-                            if (index % 5 == 0) {
-                                GridItemSpan(4)
-                            } else {
-                                GridItemSpan(1)
-                            }
-                        } else {
+                        val asset = viewModel.getAsset(bucket.timeStamp, index)
+
+                        if (asset != null) {
                             GridItemSpan(asset.span)
+                        } else if (bucket.spans.isNotEmpty()) {
+                            GridItemSpan(bucket.spans[index])
+                        } else {
+                            GridItemSpan(2)
                         }
                     },
                     count = bucket.count,
@@ -157,13 +153,15 @@ fun TimelineScreen(
             BoxWithConstraints(
                 modifier = Modifier.fillMaxSize()
             ) {
+                val topPadding = remember { innerPadding.calculateTopPadding() }
+                val bottomPadding = remember { innerPadding.calculateBottomPadding() }
                 var numberOfItems = buckets.value.keys.size
                 var height = with(LocalDensity.current) {
-                    (maxHeight - 50.dp - innerPadding.calculateTopPadding() - innerPadding.calculateBottomPadding()).toPx()
+                    (maxHeight - topPadding - bottomPadding - 42.dp).toPx()
                 }
                 var minDelta = height / numberOfItems
-
-                var offsetY by remember { mutableStateOf(0) }
+                var offsetY by rememberSaveable { mutableStateOf(0) }
+                var index by rememberSaveable { mutableStateOf(0) }
 
                 val draggableState = rememberDraggableState(onDelta = { delta ->
                     offsetY = if (delta < 0) {
@@ -174,10 +172,15 @@ fun TimelineScreen(
                             height.roundToInt()
                         )
                     }
+
+                    index = minOf(
+                        maxOf((offsetY / minDelta).roundToInt(), 0),
+                        buckets.value.values.size - 1
+                    )
                 })
                 Button(
                     modifier = Modifier
-                        .padding(innerPadding)
+                        .padding(top = topPadding)
                         .offset { IntOffset(0, offsetY) }
                         .align(Alignment.TopEnd)
                         .draggable(
@@ -187,15 +190,12 @@ fun TimelineScreen(
                     onClick = {}
 
                 ) {
-                    val index = minOf(
-                        maxOf((offsetY / minDelta).roundToInt(), 0),
-                        buckets.value.values.size - 1
-                    )
+
 
                     LaunchedEffect(index) {
-                        gridState.scrollToItem(buckets.value.values.toList()[index].timeBucket.index + index)
+                        gridState.scrollToItem(buckets.value.values.toList()[index].index + index)
                     }
-                    Text(text = buckets.value.values.toList()[index].timeBucket.formattedDate)
+                    Text(text = buckets.value.values.toList()[index].formattedDate)
                 }
             }
         }

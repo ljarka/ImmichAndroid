@@ -12,4 +12,5 @@ import androidx.room.Index
 data class MonthBucketEntity(
     @ColumnInfo(name = "timestamp") val timestamp: Long,
     @ColumnInfo(name = "count") val count: Int,
+    @ColumnInfo(name = "rowsNumber") val rowsNumber: Int? = null,
 )

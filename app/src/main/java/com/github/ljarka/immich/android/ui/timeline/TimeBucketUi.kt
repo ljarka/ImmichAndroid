@@ -5,4 +5,6 @@ data class TimeBucketUi(
     val count: Int = 0,
     val formattedDate: String = "",
     val index: Int = 0,
+    var items: List<AssetUi> = emptyList(),
+    var spans: List<Int> = emptyList(),
 )
