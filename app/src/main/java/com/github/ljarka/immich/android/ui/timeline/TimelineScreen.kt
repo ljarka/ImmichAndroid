@@ -2,6 +2,7 @@ package com.github.ljarka.immich.android.ui.timeline
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -40,8 +41,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +60,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.SubcomposeAsyncImage
 import com.github.ljarka.immich.android.R
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 enum class BaseRowType {
@@ -68,6 +72,8 @@ data class CalculatedRows(
     val doubleItemRowCount: Int = 0,
     val quadrupleItemRowCount: Int = 0,
 )
+
+private val fixedSpans = mutableSetOf<Long>()
 
 @SuppressLint("UnusedBoxWithConstraintsScope")
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
@@ -141,7 +147,9 @@ fun TimelineScreen(
                 items(
                     count = bucket.count, span = { index ->
                         val item = viewModel.getAsset(bucket.timeStamp, index)
-                        if (item != null) {
+                        if (fixedSpans.contains(bucket.timeStamp)) {
+                            GridItemSpan(2)
+                        } else if (item != null) {
                             GridItemSpan(item.span)
                         } else if (rows != null) {
                             if (index + 1 < rows.singleItemRowCount) {
@@ -154,6 +162,7 @@ fun TimelineScreen(
                                 GridItemSpan(2)
                             }
                         } else {
+                            fixedSpans.add(bucket.timeStamp)
                             GridItemSpan(2)
                         }
                     }, key = { index -> "${bucket.timeStamp}_$index".hashCode() }) { index ->
@@ -179,12 +188,25 @@ fun TimelineScreen(
                 val topPadding = remember { innerPadding.calculateTopPadding() }
                 val bottomPadding = remember { innerPadding.calculateBottomPadding() }
                 var numberOfItems = buckets.value.keys.size
-                var height = with(LocalDensity.current) {
+                var maxOffset = with(LocalDensity.current) {
                     (maxHeight - topPadding - bottomPadding - 42.dp).toPx()
                 }
-                var minDelta = height / numberOfItems
+                var minDelta = maxOffset / numberOfItems
                 var offsetY by rememberSaveable { mutableStateOf(0) }
                 var index by rememberSaveable { mutableStateOf(0) }
+                var coroutineScope = rememberCoroutineScope()
+                var text by remember { mutableStateOf(buckets.value.values.first().formattedDate) }
+
+                LaunchedEffect(gridState) {
+                    snapshotFlow { gridState.firstVisibleItemIndex }
+                        .collect { firstItemIndex ->
+                            val bucket =
+                                buckets.value.values.lastOrNull { it.index <= firstItemIndex }
+                            if (bucket != null) {
+                                text = bucket.formattedDate
+                            }
+                        }
+                }
 
                 val draggableState = rememberDraggableState(onDelta = { delta ->
                     offsetY = if (delta < 0) {
@@ -192,7 +214,7 @@ fun TimelineScreen(
                     } else {
                         minOf(
                             offsetY + maxOf(delta.roundToInt(), minDelta.toInt()),
-                            height.roundToInt()
+                            maxOffset.roundToInt()
                         )
                     }
 
@@ -200,6 +222,11 @@ fun TimelineScreen(
                         maxOf((offsetY / minDelta).roundToInt(), 0),
                         buckets.value.values.size - 1
                     )
+
+                    coroutineScope.launch {
+                        gridState.scrollToItem(buckets.value.values.toList()[index].index + index)
+                        text = buckets.value.values.toList()[index].formattedDate
+                    }
                 })
                 Button(
                     modifier = Modifier
@@ -213,12 +240,7 @@ fun TimelineScreen(
                     onClick = {}
 
                 ) {
-
-
-                    LaunchedEffect(index) {
-                        gridState.scrollToItem(buckets.value.values.toList()[index].index + index)
-                    }
-                    Text(text = buckets.value.values.toList()[index].formattedDate)
+                    Text(text = text)
                 }
             }
         }
