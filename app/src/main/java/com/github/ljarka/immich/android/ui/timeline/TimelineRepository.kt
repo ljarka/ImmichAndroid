@@ -50,12 +50,7 @@ class TimelineRepository @Inject constructor(
                         timeStamp = bucketItem.timestamp,
                         count = bucketItem.count,
                         formattedDate = formatDate(Instant.ofEpochMilli(bucketItem.timestamp)),
-                        spans = bucketItem.rowsNumber?.let {
-                            distributeSpans(
-                                itemCount = bucketItem.count,
-                                rowCount = it
-                            )
-                        } ?: emptyList(),
+                        numberOfRows = bucketItem.rowsNumber ?: 0,
                     )
                 }
             }.onEach {
@@ -68,7 +63,7 @@ class TimelineRepository @Inject constructor(
                             index = acc.index + acc.count,
                             count = bucket.count,
                             formattedDate = formatDate(Instant.ofEpochMilli(bucket.timeStamp)),
-                            spans = bucket.spans,
+                            numberOfRows = bucket.numberOfRows,
                         )
                     }.drop(1).associate {
                         it.timeStamp to TimeBucketUi(
@@ -76,7 +71,7 @@ class TimelineRepository @Inject constructor(
                             count = it.count,
                             formattedDate = it.formattedDate,
                             index = it.index,
-                            spans = it.spans,
+                            numberOfRows = it.numberOfRows,
                         )
                     }
                 }
@@ -100,8 +95,7 @@ class TimelineRepository @Inject constructor(
                         timeStamp = item.timestamp,
                         count = item.count,
                         formattedDate = formatDate(Instant.ofEpochMilli(item.timestamp)),
-                        spans = item.rowsNumber?.let { distributeSpans(item.count, it) }
-                            ?: emptyList()
+                        numberOfRows = item.rowsNumber,
                     )
                 }
                 emit(uiBuckets)
@@ -226,31 +220,6 @@ class TimelineRepository @Inject constructor(
                 exifInfo.exifImageHeight,
             )
         }
-    }
-
-    private fun distributeSpans(itemCount: Int, rowCount: Int, columns: Int = 4): List<Int> {
-        val totalSlots = rowCount * columns
-        var extraSlots = totalSlots - itemCount
-        val spans = MutableList(itemCount) { 1 }
-
-        var index = 0
-        var delta = 1
-        while (extraSlots > 1) {
-            spans[index] += delta
-            index++
-            extraSlots -= delta
-
-            if (index == itemCount) {
-                index = 0
-                delta = 2
-            }
-        }
-
-        if (extraSlots == 1) {
-            spans[index] += 1
-        }
-
-        return spans
     }
 
     private fun adjustSpans(assets: List<AssetUi>): List<AssetUi> {

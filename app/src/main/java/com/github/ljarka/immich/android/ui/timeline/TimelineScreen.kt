@@ -59,6 +59,16 @@ import coil3.compose.SubcomposeAsyncImage
 import com.github.ljarka.immich.android.R
 import kotlin.math.roundToInt
 
+enum class BaseRowType {
+    SINGLE, DOUBLE, QUADRUPLE
+}
+
+data class CalculatedRows(
+    val singleItemRowCount: Int = 0,
+    val doubleItemRowCount: Int = 0,
+    val quadrupleItemRowCount: Int = 0,
+)
+
 @SuppressLint("UnusedBoxWithConstraintsScope")
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -121,20 +131,32 @@ fun TimelineScreen(
                         )
                     }
                 }
-                items(
-                    span = { index ->
-                        val asset = viewModel.getAsset(bucket.timeStamp, index)
 
-                        if (asset != null) {
-                            GridItemSpan(asset.span)
-                        } else if (bucket.spans.isNotEmpty()) {
-                            GridItemSpan(bucket.spans[index])
+                val rows: CalculatedRows? =
+                    if (bucket.numberOfRows != null && bucket.numberOfRows != 0) calculateRowsSizes(
+                        bucket.numberOfRows,
+                        bucket.count
+                    ) else null
+
+                items(
+                    count = bucket.count, span = { index ->
+                        val item = viewModel.getAsset(bucket.timeStamp, index)
+                        if (item != null) {
+                            GridItemSpan(item.span)
+                        } else if (rows != null) {
+                            if (index + 1 < rows.singleItemRowCount) {
+                                GridItemSpan(4)
+                            } else if (index + 1 < rows.singleItemRowCount + rows.doubleItemRowCount) {
+                                GridItemSpan(2)
+                            } else if (index + 1 < rows.singleItemRowCount + rows.doubleItemRowCount + rows.quadrupleItemRowCount) {
+                                GridItemSpan(1)
+                            } else {
+                                GridItemSpan(2)
+                            }
                         } else {
                             GridItemSpan(2)
                         }
-                    },
-                    count = bucket.count,
-                    key = { index -> "${bucket.timeStamp}_$index".hashCode() }) { index ->
+                    }, key = { index -> "${bucket.timeStamp}_$index".hashCode() }) { index ->
 
                     GalleryItem(
                         timeBucket = bucket.timeStamp,
@@ -145,6 +167,7 @@ fun TimelineScreen(
                         onImageClick = onImageClick
                     )
                 }
+
             }
         }
         val buckets = viewModel.timeBuckets.collectAsStateWithLifecycle()
@@ -198,6 +221,46 @@ fun TimelineScreen(
                     Text(text = buckets.value.values.toList()[index].formattedDate)
                 }
             }
+        }
+    }
+}
+
+private fun calculateRowsSizes(numberOfRows: Int, itemsCount: Int): CalculatedRows {
+    var singleItemRows = itemsCount // number of rows equal number of items
+    val doubleItemsRows = itemsCount / 2
+    val quadrupleItemRows = itemsCount / 4
+
+    val baseRowType = if (singleItemRows - numberOfRows <= 0) {
+        BaseRowType.SINGLE
+    } else if (doubleItemsRows - numberOfRows <= 0) {
+        BaseRowType.DOUBLE
+    } else {
+        BaseRowType.QUADRUPLE
+    }
+
+    return when (baseRowType) {
+        BaseRowType.SINGLE -> CalculatedRows(singleItemRowCount = singleItemRows)
+        BaseRowType.DOUBLE -> {
+            val difference = numberOfRows - doubleItemsRows
+
+            CalculatedRows(
+                singleItemRowCount = difference * 2,
+                doubleItemRowCount = doubleItemsRows - difference
+            )
+        }
+
+        BaseRowType.QUADRUPLE -> {
+            val difference = numberOfRows - quadrupleItemRows
+            val quadrupleRows = quadrupleItemRows - difference
+            val doubleRows = difference * 2
+            val singleRows =
+                maxOf(itemsCount - (quadrupleRows * 4 + doubleRows * 2), 0)
+
+            CalculatedRows(
+                singleItemRowCount = singleRows,
+                quadrupleItemRowCount = quadrupleItemRows - difference,
+                doubleItemRowCount = difference * 2,
+            )
         }
     }
 }
