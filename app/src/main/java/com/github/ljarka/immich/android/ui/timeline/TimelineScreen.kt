@@ -2,7 +2,6 @@ package com.github.ljarka.immich.android.ui.timeline
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -19,12 +18,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,18 +48,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.SubcomposeAsyncImage
 import com.github.ljarka.immich.android.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 enum class BaseRowType {
@@ -75,7 +79,6 @@ data class CalculatedRows(
 
 private val fixedSpans = mutableSetOf<Long>()
 
-@SuppressLint("UnusedBoxWithConstraintsScope")
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TimelineScreen(
@@ -182,67 +185,94 @@ fun TimelineScreen(
         val buckets = viewModel.timeBuckets.collectAsStateWithLifecycle()
 
         if (buckets.value.values.isNotEmpty()) {
-            BoxWithConstraints(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                val topPadding = remember { innerPadding.calculateTopPadding() }
-                val bottomPadding = remember { innerPadding.calculateBottomPadding() }
-                var numberOfItems = buckets.value.keys.size
-                var maxOffset = with(LocalDensity.current) {
-                    (maxHeight - topPadding - bottomPadding - 42.dp).toPx()
-                }
-                var minDelta = maxOffset / numberOfItems
-                var offsetY by rememberSaveable { mutableStateOf(0) }
-                var index by rememberSaveable { mutableStateOf(0) }
-                var coroutineScope = rememberCoroutineScope()
-                var text by remember { mutableStateOf(buckets.value.values.first().formattedDate) }
+            FastScroll(
+                innerPadding = innerPadding,
+                buckets = buckets.value,
+                gridState = gridState,
+            )
+        }
+    }
+}
 
-                LaunchedEffect(gridState) {
-                    snapshotFlow { gridState.firstVisibleItemIndex }
-                        .collect { firstItemIndex ->
-                            val bucket =
-                                buckets.value.values.lastOrNull { it.index <= firstItemIndex }
+@SuppressLint("UnusedBoxWithConstraintsScope")
+@Composable
+private fun FastScroll(
+    innerPadding: PaddingValues,
+    buckets: Map<Long, TimeBucketUi>,
+    gridState: LazyGridState,
+) {
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        val top = with(LocalDensity.current) { innerPadding.calculateTopPadding().toPx() }
+        val bottom = with(LocalDensity.current) { innerPadding.calculateBottomPadding().toPx() }
+        val verticalPadding = rememberSaveable { top }
+        val bottomPadding = rememberSaveable { bottom }
+        var numberOfItems = buckets.keys.size
+        var maxOffset = with(LocalDensity.current) {
+            (maxHeight - 50.dp).toPx() - verticalPadding - bottomPadding
+        }
+        var minDelta = maxOffset / numberOfItems
+        var offsetY by rememberSaveable { mutableStateOf(0) }
+        var index by rememberSaveable { mutableStateOf(0) }
+        var coroutineScope = rememberCoroutineScope()
+        var text by remember { mutableStateOf(buckets.values.first().formattedDate) }
+        var currentJob by remember { mutableStateOf<Job?>(null) }
+        var isDragging by remember { mutableStateOf(false) }
+        val draggableState = rememberDraggableState(onDelta = { delta ->
+            offsetY = (offsetY + delta).toInt()
+            index = minOf(
+                maxOf((offsetY / minDelta).roundToInt(), 0),
+                buckets.values.size - 1
+            )
+
+            currentJob?.cancel()
+            currentJob = coroutineScope.launch {
+                gridState.scrollToItem(buckets.values.toList()[index].index + index)
+                text = buckets.values.toList()[index].formattedDate
+            }
+        })
+        LaunchedEffect(gridState, isDragging) {
+            snapshotFlow { gridState.firstVisibleItemIndex }
+                .collect { firstItemIndex ->
+                    if (!isDragging) {
+                        withContext(Dispatchers.Default) {
+                            val bucket = buckets.values.lastOrNull {
+                                it.index <= firstItemIndex
+                            }
+
                             if (bucket != null) {
                                 text = bucket.formattedDate
+
+                                if (gridState.isScrollInProgress) {
+                                    offsetY = (minDelta * buckets.values.indexOf(bucket)).toInt()
+                                }
                             }
                         }
-                }
-
-                val draggableState = rememberDraggableState(onDelta = { delta ->
-                    offsetY = if (delta < 0) {
-                        maxOf(offsetY + minOf(delta.roundToInt(), minDelta.toInt()), 0)
-                    } else {
-                        minOf(
-                            offsetY + maxOf(delta.roundToInt(), minDelta.toInt()),
-                            maxOffset.roundToInt()
-                        )
                     }
-
-                    index = minOf(
-                        maxOf((offsetY / minDelta).roundToInt(), 0),
-                        buckets.value.values.size - 1
-                    )
-
-                    coroutineScope.launch {
-                        gridState.scrollToItem(buckets.value.values.toList()[index].index + index)
-                        text = buckets.value.values.toList()[index].formattedDate
-                    }
-                })
-                Button(
-                    modifier = Modifier
-                        .padding(top = topPadding)
-                        .offset { IntOffset(0, offsetY) }
-                        .align(Alignment.TopEnd)
-                        .draggable(
-                            state = draggableState,
-                            orientation = Orientation.Vertical
-                        ),
-                    onClick = {}
-
-                ) {
-                    Text(text = text)
                 }
-            }
+        }
+        Button(
+            modifier = Modifier
+                .padding(top = with(LocalDensity.current) { top.toDp() })
+                .graphicsLayer {
+                    translationY = max(min(offsetY, maxOffset.toInt()).toFloat(), 0f)
+                }
+                .align(Alignment.TopEnd)
+                .draggable(
+                    state = draggableState,
+                    orientation = Orientation.Vertical,
+                    onDragStarted = {
+                        isDragging = true
+                    },
+                    onDragStopped = {
+                        isDragging = false
+                    }
+                ),
+            onClick = {}
+
+        ) {
+            Text(text = text)
         }
     }
 }
