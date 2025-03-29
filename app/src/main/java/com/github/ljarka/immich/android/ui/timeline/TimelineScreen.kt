@@ -4,10 +4,11 @@ import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,8 +28,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,10 +48,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,14 +94,19 @@ fun TimelineScreen(
         )
     )
 
-    LaunchedEffect(Unit) {
-        scaffoldState.bottomSheetState.expand()
-    }
-
     Box(modifier = Modifier.fillMaxSize()) {
         val viewModel: TimelineViewModel = hiltViewModel()
         val state = viewModel.state.collectAsStateWithLifecycle()
         val gridState = rememberLazyGridState()
+
+        LaunchedEffect(scaffoldState) {
+            snapshotFlow { scaffoldState.bottomSheetState.currentValue }
+                .collect { state ->
+                    if (state == SheetValue.PartiallyExpanded) {
+                        viewModel.clearSelection()
+                    }
+                }
+        }
 
         BottomSheetScaffold(
             sheetPeekHeight = 0.dp,
@@ -192,8 +199,12 @@ fun TimelineScreen(
                             }
                         }
                         val asset = viewModel.getAsset(bucket.timeStamp, index)
+                        val coroutineScope = rememberCoroutineScope()
                         val assetLoading by viewModel.getAssetLoadingState(bucket.timeStamp)
                             .collectAsStateWithLifecycle(lifecycleOwner = itemLifecycleOwner)
+                        val selectedAssets by viewModel.selectedAssets.collectAsStateWithLifecycle(
+                            lifecycleOwner = itemLifecycleOwner
+                        )
 
                         if (asset == null) {
                             if (assetLoading != AssetLoadingState.LOADING) {
@@ -207,7 +218,30 @@ fun TimelineScreen(
                                 asset = asset,
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
-                                onImageClick = onImageClick
+                                isSelectedItem = selectedAssets.contains(asset.id),
+                                onClick = {
+                                    if (selectedAssets.isEmpty()) {
+                                        onImageClick(it)
+                                    } else {
+                                        if (selectedAssets.contains(it)) {
+                                            viewModel.deselectAsset(it)
+                                            if (viewModel.selectedAssets.value.isEmpty()) {
+                                                coroutineScope.launch {
+                                                    scaffoldState.bottomSheetState.hide()
+                                                }
+                                            }
+                                        } else {
+                                            viewModel.selectAsset(it)
+                                        }
+                                    }
+                                },
+                                isInEditMode = selectedAssets.isNotEmpty(),
+                                onLongClick = {
+                                    viewModel.selectAsset(it)
+                                    coroutineScope.launch {
+                                        scaffoldState.bottomSheetState.expand()
+                                    }
+                                }
                             )
                         }
                     }
@@ -291,52 +325,47 @@ private fun calculateRowsSizes(numberOfRows: Int, itemsCount: Int): CalculatedRo
 @Composable
 private fun GalleryItem(
     asset: AssetUi,
-    onImageClick: (String) -> Unit,
+    onClick: (String) -> Unit,
+    onLongClick: (String) -> Unit,
+    isInEditMode: Boolean,
+    isSelectedItem: Boolean,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     with(sharedTransitionScope) {
-        var isInEditMode by remember { mutableStateOf(false) }
-        val scale = remember { Animatable(1f) }
-        val coroutineScope = rememberCoroutineScope()
-        SubcomposeAsyncImage(
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .scale(scale.value)
-                .sharedElement(
-                    state = rememberSharedContentState(key = asset.id),
-                    animatedVisibilityScope = animatedVisibilityScope,
-                )
-                .combinedClickable(
-                    onClick = {
-                        if (isInEditMode) {
-                            if (scale.value == 0.9f) {
-                                coroutineScope.launch {
-                                    scale.animateTo(1f)
-                                }
-                            } else {
-                                coroutineScope.launch {
-                                    scale.animateTo(0.9f)
-                                }
-                            }
-                        } else {
-                            onImageClick(asset.id)
-                        }
-                    },
-                    onLongClick = {
-                        isInEditMode = true
-                        coroutineScope.launch {
-                            scale.animateTo(0.9f)
-                        }
-                    },
-                )
-                .padding(4.dp)
-                .height(170.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            model = asset.url,
-            loading = { PlaceHolder() },
-            contentDescription = null,
+        val scaleSelected: Float = 1f - (0.1f * 1 / asset.span)
+        val scale by animateFloatAsState(
+            targetValue = if (isSelectedItem) scaleSelected else 1f,
+            label = "scale"
         )
+
+        Box(
+            modifier = Modifier.scale(scale),
+        ) {
+            SubcomposeAsyncImage(
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .sharedElement(
+                        state = rememberSharedContentState(key = asset.id),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                    .combinedClickable(
+                        onClick = { onClick(asset.id) },
+                        onLongClick = {
+                            onLongClick(asset.id)
+                        },
+                    )
+                    .padding(4.dp)
+                    .height(170.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                model = asset.url,
+                loading = { PlaceHolder() },
+                contentDescription = null,
+            )
+            if (isInEditMode) {
+                CheckBox(isSelectedItem)
+            }
+        }
     }
 }
 
@@ -373,5 +402,25 @@ fun IconTextButton(
         Icon(imageVector = icon, contentDescription = text)
         Spacer(modifier = Modifier.width(4.dp))
         Text(text = text)
+    }
+}
+
+@Composable
+fun CheckBox(checked: Boolean) {
+    Box(modifier = Modifier.padding(12.dp)) {
+        if (checked) {
+            Icon(
+                modifier = Modifier
+                    .border(width = 1.dp, Color.White, shape = CircleShape),
+                imageVector = Icons.Default.CheckCircle, contentDescription = null,
+                tint = Color.White,
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .border(width = 1.dp, Color.White, shape = CircleShape)
+            )
+        }
     }
 }
