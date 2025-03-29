@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class AssetState {
+enum class AssetLoadingState {
     LOADING, LOADED, DEFAULT
 }
 
@@ -21,10 +21,17 @@ class TimelineViewModel @Inject constructor(
     val timelineRepository: TimelineRepository,
 ) : ViewModel() {
 
-    private val _assetState = mutableMapOf<Long, MutableStateFlow<AssetState>>()
+    private val fixedSpans = mutableSetOf<Long>()
+    private val _assetState = mutableMapOf<Long, MutableStateFlow<AssetLoadingState>>()
 
-    fun getAssetLoadingState(bucket: Long): StateFlow<AssetState> {
-        return _assetState.getOrPut(bucket) { MutableStateFlow(AssetState.DEFAULT) }
+    fun getAssetLoadingState(bucket: Long): StateFlow<AssetLoadingState> {
+        return _assetState.getOrPut(bucket) { MutableStateFlow(AssetLoadingState.DEFAULT) }
+    }
+
+    fun isFixedSpan(bucket: Long): Boolean = fixedSpans.contains(bucket)
+
+    fun setFixedSpan(bucket: Long) {
+        fixedSpans.add(bucket)
     }
 
     val state = timelineRepository.getTimeBuckets()
@@ -36,14 +43,14 @@ class TimelineViewModel @Inject constructor(
         return timelineRepository.getAsset(bucket, position)
     }
 
-    fun fetchAsset(bucket: Long) {
+    fun fetchAssets(bucket: Long) {
         val job = assetFetchingJobs[bucket]
 
         if (job == null || !job.isActive) {
             assetFetchingJobs[bucket] = viewModelScope.launch(Dispatchers.IO) {
-                _assetState[bucket]?.value = AssetState.LOADING
+                _assetState[bucket]?.value = AssetLoadingState.LOADING
                 timelineRepository.fetchAssets(bucket)
-                _assetState[bucket]?.value = AssetState.LOADED
+                _assetState[bucket]?.value = AssetLoadingState.LOADED
             }
         }
     }
