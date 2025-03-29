@@ -182,12 +182,11 @@ fun TimelineScreen(
 
             }
         }
-        val buckets = viewModel.timeBuckets.collectAsStateWithLifecycle()
 
-        if (buckets.value.values.isNotEmpty()) {
+        if (state.value.isNotEmpty()) {
             FastScroll(
                 innerPadding = innerPadding,
-                buckets = buckets.value,
+                buckets = state.value,
                 gridState = gridState,
             )
         }
@@ -198,38 +197,32 @@ fun TimelineScreen(
 @Composable
 private fun FastScroll(
     innerPadding: PaddingValues,
-    buckets: Map<Long, TimeBucketUi>,
+    buckets: List<TimeBucketUi>,
     gridState: LazyGridState,
 ) {
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
     ) {
-        val top = with(LocalDensity.current) { innerPadding.calculateTopPadding().toPx() }
-        val bottom = with(LocalDensity.current) { innerPadding.calculateBottomPadding().toPx() }
-        val verticalPadding = rememberSaveable { top }
-        val bottomPadding = rememberSaveable { bottom }
-        var numberOfItems = buckets.keys.size
-        var maxOffset = with(LocalDensity.current) {
-            (maxHeight - 50.dp).toPx() - verticalPadding - bottomPadding
-        }
+        var numberOfItems = buckets.size
+        var maxOffset = with(LocalDensity.current) { (maxHeight - 208.dp).toPx() }
         var minDelta = maxOffset / numberOfItems
         var offsetY by rememberSaveable { mutableStateOf(0) }
         var index by rememberSaveable { mutableStateOf(0) }
         var coroutineScope = rememberCoroutineScope()
-        var text by remember { mutableStateOf(buckets.values.first().formattedDate) }
+        var text by remember { mutableStateOf(buckets.first().formattedDate) }
         var currentJob by remember { mutableStateOf<Job?>(null) }
         var isDragging by remember { mutableStateOf(false) }
         val draggableState = rememberDraggableState(onDelta = { delta ->
             offsetY = (offsetY + delta).toInt()
             index = minOf(
                 maxOf((offsetY / minDelta).roundToInt(), 0),
-                buckets.values.size - 1
+                buckets.size - 1
             )
 
             currentJob?.cancel()
             currentJob = coroutineScope.launch {
-                gridState.scrollToItem(buckets.values.toList()[index].index + index)
-                text = buckets.values.toList()[index].formattedDate
+                gridState.scrollToItem(buckets.toList()[index].index + index)
+                text = buckets.toList()[index].formattedDate
             }
         })
         LaunchedEffect(gridState, isDragging) {
@@ -237,7 +230,7 @@ private fun FastScroll(
                 .collect { firstItemIndex ->
                     if (!isDragging) {
                         withContext(Dispatchers.Default) {
-                            val bucket = buckets.values.lastOrNull {
+                            val bucket = buckets.lastOrNull {
                                 it.index <= firstItemIndex
                             }
 
@@ -245,7 +238,7 @@ private fun FastScroll(
                                 text = bucket.formattedDate
 
                                 if (gridState.isScrollInProgress) {
-                                    offsetY = (minDelta * buckets.values.indexOf(bucket)).toInt()
+                                    offsetY = (minDelta * buckets.indexOf(bucket)).toInt()
                                 }
                             }
                         }
@@ -254,7 +247,7 @@ private fun FastScroll(
         }
         Button(
             modifier = Modifier
-                .padding(top = with(LocalDensity.current) { top.toDp() })
+                .padding(top = 112.dp)
                 .graphicsLayer {
                     translationY = max(min(offsetY, maxOffset.toInt()).toFloat(), 0f)
                 }

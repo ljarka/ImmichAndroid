@@ -22,7 +22,6 @@ class TimelineViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _assetState = mutableMapOf<Long, MutableStateFlow<AssetState>>()
-    val timeBuckets = timelineRepository.timeBuckets
 
     fun getAssetLoadingState(bucket: Long): StateFlow<AssetState> {
         return _assetState.getOrPut(bucket) { MutableStateFlow(AssetState.DEFAULT) }

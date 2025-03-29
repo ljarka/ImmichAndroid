@@ -8,10 +8,11 @@ import com.github.ljarka.immich.android.db.MonthBucketEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
@@ -35,81 +36,85 @@ class TimelineRepository @Inject constructor(
     private val timelineBucketsService: TimelineBucketsService,
     private val urlProvider: UrlProvider,
 ) {
-    private val imagesDao by lazy { imagesDatabase.imagesDao() }
-    private val _timeBuckets: MutableStateFlow<Map<Long, TimeBucketUi>> =
+    private val bucketUpdates = MutableSharedFlow<List<TimeBucketUi>>()
+    private val timeBucketsCache: MutableStateFlow<Map<Long, TimeBucketUi>> =
         MutableStateFlow(emptyMap())
-    val timeBuckets = _timeBuckets.asStateFlow()
+    private val imagesDao by lazy { imagesDatabase.imagesDao() }
 
-    fun getAssetsCount(): Int = _timeBuckets.value.values.sumOf { it.count }
+    fun getAssetsCount(): Int = timeBucketsCache.value.values.sumOf { it.count }
 
     fun getTimeBuckets(): Flow<List<TimeBucketUi>> {
-        return imagesDao.getMonthBuckets()
-            .map { buckets ->
-                buckets.map { bucketItem ->
-                    TimeBucketUi(
-                        timeStamp = bucketItem.timestamp,
-                        count = bucketItem.count,
-                        formattedDate = formatDate(Instant.ofEpochMilli(bucketItem.timestamp)),
-                        numberOfRows = bucketItem.rowsNumber ?: 0,
+        return merge(
+            loadBucketsFromDb(), bucketUpdates,
+        ).onStart {
+            val dbBuckets = imagesDao.getMonthBuckets().firstOrNull()
+            val dbRowsNumbers = dbBuckets?.associate { it.timestamp to it.rowsNumber }
+            val buckets = timelineBucketsService.getTimeBuckets()
+                .map {
+                    MonthBucketEntity(
+                        timestamp = Instant.parse(it.timeBucket).toEpochMilli(),
+                        count = it.count,
                     )
+                }.map {
+                    it.copy(rowsNumber = dbRowsNumbers?.get(it.timestamp))
                 }
-            }.onEach {
-                if (_timeBuckets.value.isEmpty()) {
-                    _timeBuckets.value = it.runningFoldIndexed(
-                        TimeBucketUi()
-                    ) { index, acc, bucket ->
-                        TimeBucketUi(
-                            timeStamp = bucket.timeStamp,
-                            index = acc.index + acc.count,
-                            count = bucket.count,
-                            formattedDate = formatDate(Instant.ofEpochMilli(bucket.timeStamp)),
-                            numberOfRows = bucket.numberOfRows,
-                        )
-                    }.drop(1).associate {
-                        it.timeStamp to TimeBucketUi(
-                            timeStamp = it.timeStamp,
-                            count = it.count,
-                            formattedDate = it.formattedDate,
-                            index = it.index,
-                            numberOfRows = it.numberOfRows,
-                        )
-                    }
-                }
-            }
-            .onStart {
-                val dbBuckets = imagesDao.getMonthBuckets().firstOrNull()
-                val dbRowsNumbers = dbBuckets?.associate { it.timestamp to it.rowsNumber }
-                val buckets = timelineBucketsService.getTimeBuckets()
-                    .map {
-                        MonthBucketEntity(
-                            timestamp = Instant.parse(it.timeBucket).toEpochMilli(),
-                            count = it.count,
-                        )
-                    }.map {
-                        it.copy(rowsNumber = dbRowsNumbers?.get(it.timestamp))
-                    }
-                imagesDao.insertMonthBuckets(buckets)
+            imagesDao.insertMonthBuckets(buckets)
 
-                val uiBuckets = buckets.map { item ->
-                    TimeBucketUi(
-                        timeStamp = item.timestamp,
-                        count = item.count,
-                        formattedDate = formatDate(Instant.ofEpochMilli(item.timestamp)),
-                        numberOfRows = item.rowsNumber,
-                    )
-                }
-                emit(uiBuckets)
+            val uiBuckets = buckets.map { item ->
+                TimeBucketUi(
+                    timeStamp = item.timestamp,
+                    count = item.count,
+                    formattedDate = formatDate(Instant.ofEpochMilli(item.timestamp)),
+                    numberOfRows = item.rowsNumber,
+                )
             }
+            emit(uiBuckets)
+        }
     }
 
+    private fun loadBucketsFromDb() = imagesDao.getMonthBuckets()
+        .map { buckets ->
+            buckets.map { bucketItem ->
+                TimeBucketUi(
+                    timeStamp = bucketItem.timestamp,
+                    count = bucketItem.count,
+                    formattedDate = formatDate(Instant.ofEpochMilli(bucketItem.timestamp)),
+                    numberOfRows = bucketItem.rowsNumber ?: 0,
+                )
+            }.runningFoldIndexed(
+                TimeBucketUi()
+            ) { index, acc, bucket ->
+                TimeBucketUi(
+                    timeStamp = bucket.timeStamp,
+                    index = acc.index + acc.count,
+                    count = bucket.count,
+                    formattedDate = formatDate(Instant.ofEpochMilli(bucket.timeStamp)),
+                    numberOfRows = bucket.numberOfRows,
+                )
+            }.drop(1)
+        }.onEach {
+            if (timeBucketsCache.value.isEmpty()) {
+                timeBucketsCache.value = it.associate {
+                    it.timeStamp to TimeBucketUi(
+                        timeStamp = it.timeStamp,
+                        count = it.count,
+                        formattedDate = it.formattedDate,
+                        index = it.index,
+                        numberOfRows = it.numberOfRows,
+                    )
+                }
+            }
+        }
+
+
     fun getAsset(bucket: Long, position: Int): AssetUi? {
-        return _timeBuckets.value[bucket]?.items?.getOrNull(position)
+        return timeBucketsCache.value[bucket]?.items?.getOrNull(position)
     }
 
     suspend fun getAsset(index: Int): AssetUi? {
         return withContext(Dispatchers.Default) {
             val sortedValues =
-                _timeBuckets.value.values.sortedByDescending { it.timeStamp }
+                timeBucketsCache.value.values.sortedByDescending { it.timeStamp }
             var itemsCount = 0
             val bucketsBefore = sortedValues.takeWhile {
                 itemsCount += it.count
@@ -123,7 +128,7 @@ class TimelineRepository @Inject constructor(
                 fetchAssets(currentBucket.timeStamp)
             }
 
-            val bucket = _timeBuckets.value[currentBucket.timeStamp]
+            val bucket = timeBucketsCache.value[currentBucket.timeStamp]
             bucket?.items?.getOrNull(index - assetsBefore)
         }
     }
@@ -165,7 +170,8 @@ class TimelineRepository @Inject constructor(
             val items = adjustSpans(it)
             val rows = (items.sumOf { it.span } + 3) / 4
             imagesDao.updateBucket(MonthBucketEntity(bucket, items.size, rows))
-            _timeBuckets.value[bucket]?.items = items
+            timeBucketsCache.value[bucket]?.items = items
+            bucketUpdates.emit(timeBucketsCache.value.values.toList())
         }
     }
 
@@ -195,7 +201,7 @@ class TimelineRepository @Inject constructor(
     suspend fun getIndexOfAsset(assetId: String): AssetIndex {
         return withContext(Dispatchers.Default) {
             val sortedValues =
-                _timeBuckets.value.values.sortedByDescending { it.timeStamp }
+                timeBucketsCache.value.values.sortedByDescending { it.timeStamp }
             val bucketsBefore = sortedValues.takeWhile {
                 it.items.indexOfFirst { it.id == assetId } == -1
             }
