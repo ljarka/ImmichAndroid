@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -63,8 +64,9 @@ fun FastScrollComponent(
                 text = buckets.toList()[index].formattedDate
             }
         })
-        LaunchedEffect(gridState, isDragging) {
+        LaunchedEffect(gridState, isDragging, buckets) {
             snapshotFlow { gridState.firstVisibleItemIndex }
+                .drop(1)
                 .collect { firstItemIndex ->
                     if (!isDragging) {
                         withContext(Dispatchers.Default) {

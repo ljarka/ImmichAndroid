@@ -10,7 +10,8 @@ import androidx.room.Index
     indices = [Index(value = ["timestamp"])]
 )
 data class MonthBucketEntity(
-    @ColumnInfo(name = "timestamp") val timestamp: Long,
-    @ColumnInfo(name = "count") val count: Int,
+    @ColumnInfo(name = "timestamp") val timestamp: Long = 0,
+    @ColumnInfo(name = "count") val count: Int = 0,
     @ColumnInfo(name = "rowsNumber") val rowsNumber: Int? = null,
+    @ColumnInfo(name = "index") val index: Int = 0,
 )

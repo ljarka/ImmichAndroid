@@ -51,13 +51,23 @@ class TimelineRepository @Inject constructor(
             val dbRowsNumbers = dbBuckets?.associate { it.timestamp to it.rowsNumber }
             val buckets = timelineBucketsService.getTimeBuckets()
                 .map {
+                    val timestamp = Instant.parse(it.timeBucket).toEpochMilli()
                     MonthBucketEntity(
-                        timestamp = Instant.parse(it.timeBucket).toEpochMilli(),
+                        timestamp = timestamp,
                         count = it.count,
+                        rowsNumber = dbRowsNumbers?.get(timestamp)
                     )
-                }.map {
-                    it.copy(rowsNumber = dbRowsNumbers?.get(it.timestamp))
-                }
+                }.runningFoldIndexed(
+                    MonthBucketEntity()
+                ) { index, acc, bucket ->
+                    MonthBucketEntity(
+                        timestamp = bucket.timestamp,
+                        index = acc.index + acc.count,
+                        count = bucket.count,
+                        rowsNumber = bucket.rowsNumber,
+                    )
+                }.drop(1)
+
             imagesDao.insertMonthBuckets(buckets)
 
             val uiBuckets = buckets.map { item ->
@@ -80,18 +90,9 @@ class TimelineRepository @Inject constructor(
                     count = bucketItem.count,
                     formattedDate = formatDate(Instant.ofEpochMilli(bucketItem.timestamp)),
                     numberOfRows = bucketItem.rowsNumber ?: 0,
+                    index = bucketItem.index,
                 )
-            }.runningFoldIndexed(
-                TimeBucketUi()
-            ) { index, acc, bucket ->
-                TimeBucketUi(
-                    timeStamp = bucket.timeStamp,
-                    index = acc.index + acc.count,
-                    count = bucket.count,
-                    formattedDate = formatDate(Instant.ofEpochMilli(bucket.timeStamp)),
-                    numberOfRows = bucket.numberOfRows,
-                )
-            }.drop(1)
+            }
         }.onEach {
             if (timeBucketsCache.value.isEmpty()) {
                 timeBucketsCache.value = it.associate {
