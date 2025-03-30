@@ -3,6 +3,7 @@ package com.github.ljarka.immich.android.ui.image
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.ljarka.immich.android.UrlProvider
+import com.github.ljarka.immich.android.db.AssetType
 import com.github.ljarka.immich.android.ui.timeline.AssetIndex
 import com.github.ljarka.immich.android.ui.timeline.TimelineRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,6 +39,6 @@ class ImageDetailsViewModel @Inject constructor(
         }
     }
 
-    fun getPreview(assetId: String): String = urlProvider.getPreview(assetId)
-    fun getThumbnail(assetId: String): String = urlProvider.getThumbnail(assetId)
+    fun getPreview(assetId: String): String = urlProvider.getPreview(assetId, AssetType.REMOTE)
+    fun getThumbnail(assetId: String): String = urlProvider.getThumbnail(assetId, AssetType.REMOTE)
 }

@@ -14,4 +14,5 @@ data class MonthBucketEntity(
     @ColumnInfo(name = "count") val count: Int = 0,
     @ColumnInfo(name = "rowsNumber") val rowsNumber: Int? = null,
     @ColumnInfo(name = "index") val index: Int = 0,
+    @ColumnInfo(name = "lastUpdate") val lastUpdate: Long = System.currentTimeMillis(),
 )

@@ -360,6 +360,11 @@ private fun GalleryItem(
                     .clip(RoundedCornerShape(8.dp)),
                 model = asset.url,
                 loading = { PlaceHolder() },
+                error = {
+                    PlaceHolder(
+                        modifier = Modifier.background(Color.Red)
+                    )
+                },
                 contentDescription = null,
             )
             if (isInEditMode) {

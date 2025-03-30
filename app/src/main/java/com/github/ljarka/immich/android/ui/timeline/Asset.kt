@@ -12,4 +12,5 @@ data class Asset(
 data class ExifInfo(
     val exifImageWidth: Int?,
     val exifImageHeight: Int?,
+    val dateTimeOriginal: String,
 )

@@ -1,18 +1,20 @@
 package com.github.ljarka.immich.android.ui.timeline
 
+import android.content.Context
 import com.github.ljarka.immich.android.AppScope
 import com.github.ljarka.immich.android.UrlProvider
 import com.github.ljarka.immich.android.db.AssetEntity
+import com.github.ljarka.immich.android.db.AssetType
 import com.github.ljarka.immich.android.db.ImagesDatabase
 import com.github.ljarka.immich.android.db.MonthBucketEntity
+import com.github.ljarka.immich.android.local.LocalImagesProvider
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
@@ -32,11 +34,11 @@ data class AssetIndex(
 @Singleton
 class TimelineRepository @Inject constructor(
     @AppScope val coroutineScope: CoroutineScope,
+    @ApplicationContext private val context: Context,
     private val imagesDatabase: ImagesDatabase,
     private val timelineBucketsService: TimelineBucketsService,
     private val urlProvider: UrlProvider,
 ) {
-    private val bucketUpdates = MutableSharedFlow<List<TimeBucketUi>>()
     private val timeBucketsCache: MutableStateFlow<Map<Long, TimeBucketUi>> =
         MutableStateFlow(emptyMap())
     private val imagesDao by lazy { imagesDatabase.imagesDao() }
@@ -44,42 +46,46 @@ class TimelineRepository @Inject constructor(
     fun getAssetsCount(): Int = timeBucketsCache.value.values.sumOf { it.count }
 
     fun getTimeBuckets(): Flow<List<TimeBucketUi>> {
-        return merge(
-            loadBucketsFromDb(), bucketUpdates,
-        ).onStart {
-            val dbBuckets = imagesDao.getMonthBuckets().firstOrNull()
-            val dbRowsNumbers = dbBuckets?.associate { it.timestamp to it.rowsNumber }
-            val buckets = timelineBucketsService.getTimeBuckets()
-                .map {
-                    val timestamp = Instant.parse(it.timeBucket).toEpochMilli()
-                    MonthBucketEntity(
-                        timestamp = timestamp,
-                        count = it.count,
-                        rowsNumber = dbRowsNumbers?.get(timestamp)
-                    )
-                }.runningFoldIndexed(
-                    MonthBucketEntity()
-                ) { index, acc, bucket ->
-                    MonthBucketEntity(
-                        timestamp = bucket.timestamp,
-                        index = acc.index + acc.count,
-                        count = bucket.count,
-                        rowsNumber = bucket.rowsNumber,
-                    )
-                }.drop(1)
-
-            imagesDao.insertMonthBuckets(buckets)
-
-            val uiBuckets = buckets.map { item ->
-                TimeBucketUi(
-                    timeStamp = item.timestamp,
-                    count = item.count,
-                    formattedDate = formatDate(Instant.ofEpochMilli(item.timestamp)),
-                    numberOfRows = item.rowsNumber,
-                )
-            }
-            emit(uiBuckets)
+        return loadBucketsFromDb().onStart {
+            imagesDao.insertMonthBuckets(loadBucketsInfoFromServerAndDisk())
         }
+    }
+
+    private suspend fun loadBucketsInfoFromServerAndDisk(): List<MonthBucketEntity> {
+        val localImagesCount = LocalImagesProvider().getImageCountForCurrentMonth(context)
+        val currentTime = Instant.now().atZone(ZoneId.systemDefault())
+        val dbBuckets = imagesDao.getMonthBuckets().firstOrNull()
+        val dbRowsNumbers = dbBuckets?.associate { it.timestamp to it.rowsNumber }
+        return timelineBucketsService.getTimeBuckets()
+            .map {
+                val instant = Instant.parse(it.timeBucket)
+                val bucketTime = instant.atZone(ZoneId.systemDefault())
+
+                val count =
+                    if (bucketTime.year == currentTime.year && bucketTime.month == currentTime.month) {
+                        it.count + localImagesCount
+                    } else {
+                        it.count
+                    }
+                bucketTime.month
+                bucketTime.year
+                val timestamp = instant.toEpochMilli()
+
+                MonthBucketEntity(
+                    timestamp = timestamp,
+                    count = count,
+                    rowsNumber = dbRowsNumbers?.get(timestamp)
+                )
+            }.runningFoldIndexed(
+                MonthBucketEntity()
+            ) { index, acc, bucket ->
+                MonthBucketEntity(
+                    timestamp = bucket.timestamp,
+                    index = acc.index + acc.count,
+                    count = bucket.count,
+                    rowsNumber = bucket.rowsNumber,
+                )
+            }.drop(1)
     }
 
     private fun loadBucketsFromDb() = imagesDao.getMonthBuckets()
@@ -106,7 +112,6 @@ class TimelineRepository @Inject constructor(
                 }
             }
         }
-
 
     fun getAsset(bucket: Long, position: Int): AssetUi? {
         return timeBucketsCache.value[bucket]?.items?.getOrNull(position)
@@ -136,35 +141,28 @@ class TimelineRepository @Inject constructor(
 
     suspend fun fetchAssets(bucket: Long) {
         val dbAssets = imagesDao.getAssets(bucket)
-
         if (dbAssets.isEmpty()) {
-            val remoteAssets = timelineBucketsService.getBucket(
-                timeBucket = Instant.ofEpochMilli(bucket).toString()
-            )
-            updateDbAssets(bucket, remoteAssets)
-            remoteAssets.map {
-                val ratio = calculateRatio(it.exifInfo)
-                AssetUi(
-                    id = it.id,
-                    url = urlProvider.getThumbnail(it.id),
-                    span = calculateSpan(ratio = ratio),
-                )
-            }
+            updateAssets(bucket)
+            imagesDao.getAssets(bucket)
+                .map {
+                    AssetUi(
+                        id = it.assetId,
+                        url = urlProvider.getThumbnail(it.assetId, it.type),
+                        span = calculateSpan(ratio = calculateRatio(it.width ?: 1, it.height ?: 1)),
+                        type = it.type,
+                    )
+                }
         } else {
             dbAssets.map {
                 AssetUi(
                     id = it.assetId,
-                    url = urlProvider.getThumbnail(it.assetId),
+                    url = urlProvider.getThumbnail(it.assetId, it.type),
                     span = calculateSpan(ratio = calculateRatio(it.width ?: 1, it.height ?: 1)),
+                    type = it.type,
                 )
             }.also {
                 coroutineScope.launch(Dispatchers.IO) {
-                    updateDbAssets(
-                        bucket,
-                        timelineBucketsService.getBucket(
-                            timeBucket = Instant.ofEpochMilli(bucket).toString()
-                        )
-                    )
+                    updateAssets(bucket)
                 }
             }
         }.also {
@@ -172,21 +170,49 @@ class TimelineRepository @Inject constructor(
             val rows = (items.sumOf { it.span } + 3) / 4
             imagesDao.updateBucket(MonthBucketEntity(bucket, items.size, rows))
             timeBucketsCache.value[bucket]?.items = items
-            bucketUpdates.emit(timeBucketsCache.value.values.toList())
         }
     }
 
-    private suspend fun updateDbAssets(bucket: Long, assets: List<Asset>) {
-        imagesDao.insertAssets(
-            assets = assets.mapIndexed { index, asset ->
+    private suspend fun updateAssets(bucket: Long) {
+        val timeInstant = Instant.ofEpochMilli(bucket)
+
+        val remoteAssets = timelineBucketsService.getBucket(
+            timeBucket = timeInstant.toString()
+        ).map {
+            AssetEntity(
+                timestamp = bucket,
+                assetId = it.id,
+                width = it.exifInfo.exifImageWidth,
+                height = it.exifInfo.exifImageHeight,
+                dateTaken = Instant.parse(it.exifInfo.dateTimeOriginal).toEpochMilli(),
+                assetIndex = 0,
+                type = AssetType.REMOTE,
+            )
+        }
+
+        val zoned = timeInstant.atZone(ZoneId.systemDefault())
+        val localAssets = LocalImagesProvider()
+            .getImagesForMonth(context, zoned.month.ordinal, zoned.year)
+            .map {
                 AssetEntity(
                     timestamp = bucket,
-                    assetIndex = index,
-                    assetId = asset.id,
-                    width = asset.exifInfo.exifImageWidth,
-                    height = asset.exifInfo.exifImageHeight,
+                    assetId = it.id.toString(),
+                    width = it.width,
+                    height = it.height,
+                    type = AssetType.LOCAL,
+                    dateTaken = it.dateTaken,
+                    assetIndex = 0,
                 )
             }
+
+        updateDbAssets(remoteAssets + localAssets)
+    }
+
+    private suspend fun updateDbAssets(assets: List<AssetEntity>) {
+        imagesDao.insertAssets(
+            assets = assets
+                .sortedByDescending { it.dateTaken }
+                .mapIndexed { index, asset -> asset.copy(assetIndex = index) }
         )
     }
 
@@ -214,17 +240,6 @@ class TimelineRepository @Inject constructor(
             AssetIndex(
                 index = numberOfItemsInBucketsBefore + indexInBucket,
                 assetId = assetId,
-            )
-        }
-    }
-
-    private fun calculateRatio(exifInfo: ExifInfo): Float {
-        return if (exifInfo.exifImageWidth == null || exifInfo.exifImageHeight == null) {
-            1f
-        } else {
-            calculateRatio(
-                exifInfo.exifImageWidth,
-                exifInfo.exifImageHeight,
             )
         }
     }
