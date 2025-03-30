@@ -1,9 +1,11 @@
 package com.github.ljarka.immich.android.db
 
+import androidx.annotation.Keep
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 
+@Keep
 enum class AssetType {
     LOCAL, REMOTE
 }
