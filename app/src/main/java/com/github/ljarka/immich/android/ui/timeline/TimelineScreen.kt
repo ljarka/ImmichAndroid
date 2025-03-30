@@ -53,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -66,6 +67,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.SubcomposeAsyncImage
 import com.github.ljarka.immich.android.R
+import com.github.ljarka.immich.android.db.AssetType
 import kotlinx.coroutines.launch
 
 enum class BaseRowType {
@@ -367,6 +369,28 @@ private fun GalleryItem(
                 },
                 contentDescription = null,
             )
+
+            if (asset.type == AssetType.LOCAL) {
+                Icon(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(vertical = 8.dp, horizontal = 12.dp)
+                        .alpha(0.5f),
+                    painter = painterResource(R.drawable.ic_cloud_off),
+                    tint = Color.White,
+                    contentDescription = null,
+                )
+            } else {
+                Icon(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(vertical = 8.dp, horizontal = 12.dp)
+                        .alpha(0.5f),
+                    painter = painterResource(R.drawable.ic_cloud),
+                    tint = Color.White,
+                    contentDescription = null
+                )
+            }
             if (isInEditMode) {
                 CheckBox(isSelectedItem)
             }
