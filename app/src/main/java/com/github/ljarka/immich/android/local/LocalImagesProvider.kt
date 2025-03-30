@@ -79,26 +79,18 @@ class LocalImagesProvider {
         }
     }
 
-    suspend fun getImagesForCurrentMonth(context: Context): List<ImageData> {
-        val calendar = Calendar.getInstance()
-        return getImagesForMonth(context, calendar.get(Calendar.MONTH), calendar.get(Calendar.YEAR))
-    }
-
-    suspend fun getImageCountForCurrentMonth(context: Context): Int {
+    suspend fun getImagesCountForMonth(context: Context, month: Int, year: Int): Int {
         return withContext(Dispatchers.IO) {
             val calendar = Calendar.getInstance()
-            calendar.set(Calendar.DAY_OF_MONTH, 1)
+            calendar.set(year, month, calendar.getActualMinimum(Calendar.DAY_OF_MONTH))
             val startOfMonth = calendar.timeInMillis
+            calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+            val endOfMonth = calendar.timeInMillis
 
-            calendar.add(Calendar.MONTH, 1)
-            calendar.set(Calendar.DAY_OF_MONTH, 1)
-            val endOfMonth = calendar.timeInMillis - 1
-
+            val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             val selection =
                 "${MediaStore.Images.Media.DATE_TAKEN} >= ? AND ${MediaStore.Images.Media.DATE_TAKEN} <= ?"
             val selectionArgs = arrayOf(startOfMonth.toString(), endOfMonth.toString())
-
-            val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 
             context.contentResolver.query(uri, null, selection, selectionArgs, null)
                 ?.use { cursor ->

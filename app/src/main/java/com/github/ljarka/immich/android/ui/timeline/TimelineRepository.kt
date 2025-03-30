@@ -52,8 +52,7 @@ class TimelineRepository @Inject constructor(
     }
 
     private suspend fun loadBucketsInfoFromServerAndDisk(): List<MonthBucketEntity> {
-        val localImagesCount = LocalImagesProvider().getImageCountForCurrentMonth(context)
-        val currentTime = Instant.now().atZone(ZoneId.systemDefault())
+        val localImagesProvider = LocalImagesProvider()
         val dbBuckets = imagesDao.getMonthBuckets().firstOrNull()
         val dbRowsNumbers = dbBuckets?.associate { it.timestamp to it.rowsNumber }
         return timelineBucketsService.getTimeBuckets()
@@ -61,19 +60,16 @@ class TimelineRepository @Inject constructor(
                 val instant = Instant.parse(it.timeBucket)
                 val bucketTime = instant.atZone(ZoneId.systemDefault())
 
-                val count =
-                    if (bucketTime.year == currentTime.year && bucketTime.month == currentTime.month) {
-                        it.count + localImagesCount
-                    } else {
-                        it.count
-                    }
-                bucketTime.month
-                bucketTime.year
+                val localImagesCount = localImagesProvider.getImagesCountForMonth(
+                    context = context,
+                    month = bucketTime.month.ordinal,
+                    year = bucketTime.year
+                )
                 val timestamp = instant.toEpochMilli()
 
                 MonthBucketEntity(
                     timestamp = timestamp,
-                    count = count,
+                    count = localImagesCount + it.count,
                     rowsNumber = dbRowsNumbers?.get(timestamp)
                 )
             }.runningFoldIndexed(
@@ -168,7 +164,10 @@ class TimelineRepository @Inject constructor(
         }.also {
             val items = adjustSpans(it)
             val rows = (items.sumOf { it.span } + 3) / 4
-            imagesDao.updateBucket(MonthBucketEntity(bucket, items.size, rows))
+            imagesDao.updateBucket(
+                timestamp = bucket,
+                rowsNumber = rows,
+            )
             timeBucketsCache.value[bucket]?.items = items
         }
     }
