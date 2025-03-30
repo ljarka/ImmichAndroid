@@ -21,7 +21,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -38,9 +37,10 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
+import com.github.ljarka.immich.android.db.AssetType
+import com.github.ljarka.immich.android.ui.timeline.AssetIndex
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -53,6 +53,8 @@ fun ImageDetailsScreen(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onDismissRequest: () -> Unit,
     assetId: String,
+    assetType: AssetType,
+    imageIndex: Int,
 ) {
     var coroutineScope = rememberCoroutineScope()
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -91,57 +93,52 @@ fun ImageDetailsScreen(
     ) { innerPadding ->
         with(sharedTransitionScope) {
             val viewModel = hiltViewModel<ImageDetailsViewModel>()
-            var initialPage = viewModel.initialPage.collectAsStateWithLifecycle()
-            LaunchedEffect(assetId) { viewModel.checkInitialPage(assetId) }
 
-            if (initialPage.value != null) {
-                val pagerState = rememberPagerState(
-                    pageCount = {
-                        viewModel.getNumberOfPages()
-                    },
-                    initialPage = initialPage.value?.index ?: 0,
-                )
-                HorizontalPager(
-                    state = pagerState,
-                    beyondViewportPageCount = 3,
-                    userScrollEnabled = scale == 1f && !sharedTransitionScope.isTransitionActive,
-                    pageSpacing = 16.dp,
-                    modifier = Modifier
-                        .pointerInput(imageSize) {
-                            detectTransformGestures { centroid: Offset, pan: Offset, zoom: Float, rotation: Float ->
-                                val offsetX =
-                                    calculateOffset(offset.x, pan.x, imageSize.width / 2f, scale)
-                                val offsetY =
-                                    calculateOffset(offset.y, pan.y, imageSize.height / 2f, scale)
-                                offset = Offset(
-                                    x = offsetX,
-                                    y = offsetY,
-                                )
-                                scale = max(
-                                    ZoomStatus.Zoom1().scale,
-                                    minOf(scale * zoom, ZoomStatus.Zoom4().scale)
-                                )
-                            }
+            val pagerState = rememberPagerState(
+                pageCount = { viewModel.getNumberOfPages() },
+                initialPage = imageIndex,
+            )
+            HorizontalPager(
+                state = pagerState,
+                beyondViewportPageCount = 3,
+                userScrollEnabled = scale == 1f && !sharedTransitionScope.isTransitionActive,
+                pageSpacing = 16.dp,
+                modifier = Modifier
+                    .pointerInput(imageSize) {
+                        detectTransformGestures { centroid: Offset, pan: Offset, zoom: Float, rotation: Float ->
+                            val offsetX =
+                                calculateOffset(offset.x, pan.x, imageSize.width / 2f, scale)
+                            val offsetY =
+                                calculateOffset(offset.y, pan.y, imageSize.height / 2f, scale)
+                            offset = Offset(
+                                x = offsetX,
+                                y = offsetY,
+                            )
+                            scale = max(
+                                ZoomStatus.Zoom1().scale,
+                                minOf(scale * zoom, ZoomStatus.Zoom4().scale)
+                            )
                         }
-                ) { page ->
-
-                    val isCurrentPage = page == pagerState.currentPage
-
-                    if (!(scale > 1f && !isCurrentPage)) {
-                        Page(
-                            modifier = Modifier.padding(innerPadding),
-                            isCurrentPage = isCurrentPage,
-                            assetId = assetId,
-                            scale = scale,
-                            offset = offset,
-                            page = page,
-                            dismissRequest = { dismiss() },
-                            onScaleChanged = { scale = it },
-                            onOffsetChanged = { offset = it },
-                            onImageSizeChanged = { imageSize = it },
-                            animatedVisibilityScope = animatedVisibilityScope,
-                        )
                     }
+            ) { page ->
+
+                val isCurrentPage = page == pagerState.currentPage
+
+                if (!(scale > 1f && !isCurrentPage)) {
+                    Page(
+                        modifier = Modifier.padding(innerPadding),
+                        isCurrentPage = isCurrentPage,
+                        initialAssetId = assetId,
+                        initialAssetType = assetType,
+                        scale = scale,
+                        offset = offset,
+                        page = page,
+                        dismissRequest = { dismiss() },
+                        onScaleChanged = { scale = it },
+                        onOffsetChanged = { offset = it },
+                        onImageSizeChanged = { imageSize = it },
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
                 }
             }
         }
@@ -153,7 +150,8 @@ fun ImageDetailsScreen(
 private fun SharedTransitionScope.Page(
     modifier: Modifier = Modifier,
     isCurrentPage: Boolean,
-    assetId: String,
+    initialAssetId: String,
+    initialAssetType: AssetType,
     scale: Float,
     offset: Offset,
     page: Int,
@@ -176,25 +174,32 @@ private fun SharedTransitionScope.Page(
             }
         }
     ) {
-        val updatedAssetId = viewModel.getAssetId(page).collectAsState(assetId)
+        val assetIndex = viewModel.getAssetIndex(page)
+            .collectAsState(AssetIndex(page, initialAssetId, initialAssetType))
         SubcomposeAsyncImage(
             modifier = Modifier
                 .fillMaxWidth()
                 .onPlaced { onImageSizeChanged(it.size) }
                 .then(
                     if (isCurrentPage) Modifier.sharedElement(
-                        state = rememberSharedContentState(key = updatedAssetId.value),
+                        state = rememberSharedContentState(key = assetIndex.value.assetId),
                         animatedVisibilityScope = animatedVisibilityScope,
                     ) else Modifier
                 )
                 .clip(RoundedCornerShape(8.dp)),
-            model = viewModel.getPreview(updatedAssetId.value),
+            model = viewModel.getPreview(
+                assetId = assetIndex.value.assetId,
+                assetType = assetIndex.value.assetType
+            ),
             contentDescription = null,
             loading = {
                 AsyncImage(
                     modifier = Modifier
                         .fillMaxWidth(),
-                    model = viewModel.getThumbnail(updatedAssetId.value),
+                    model = viewModel.getThumbnail(
+                        assetId = assetIndex.value.assetId,
+                        assetType = assetIndex.value.assetType,
+                    ),
                     contentDescription = null,
                 )
             }

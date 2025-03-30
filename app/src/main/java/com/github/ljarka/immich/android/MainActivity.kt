@@ -15,6 +15,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.github.ljarka.immich.android.db.AssetType
 import com.github.ljarka.immich.android.ui.image.ImageDetailsScreen
 import com.github.ljarka.immich.android.ui.init.InitScreen
 import com.github.ljarka.immich.android.ui.theme.ImmichAndroidTheme
@@ -30,7 +31,11 @@ sealed interface Screen {
     object Timeline : Screen
 
     @Serializable
-    data class ImageDetails(val assetId: String) : Screen
+    data class ImageDetails(
+        val assetId: String,
+        val assetType: AssetType,
+        val imageIndex: Int
+    ) : Screen
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
@@ -60,9 +65,9 @@ class MainActivity : ComponentActivity() {
                             TimelineScreen(
                                 sharedTransitionScope = this@SharedTransitionLayout,
                                 animatedVisibilityScope = this@composable,
-                                onImageClick = { assetId ->
+                                onImageClick = { assetId, assetType, imageIndex ->
                                     navController.navigate(
-                                        Screen.ImageDetails(assetId)
+                                        Screen.ImageDetails(assetId, assetType, imageIndex)
                                     ) {
                                         popUpTo(Screen.Timeline)
                                     }
@@ -70,7 +75,10 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable<Screen.ImageDetails> { backStackEntry ->
-                            val assetId = backStackEntry.toRoute<Screen.ImageDetails>().assetId
+                            val imageDetails = backStackEntry.toRoute<Screen.ImageDetails>()
+                            val assetId = imageDetails.assetId
+                            val assetType = imageDetails.assetType
+                            val imageIndex = imageDetails.imageIndex
                             var isPopBackStackCalled by remember { mutableStateOf(false) }
                             ImageDetailsScreen(
                                 sharedTransitionScope = this@SharedTransitionLayout,
@@ -82,6 +90,8 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 assetId = requireNotNull(assetId),
+                                assetType = requireNotNull(assetType),
+                                imageIndex = requireNotNull(imageIndex),
                             )
                         }
                     }

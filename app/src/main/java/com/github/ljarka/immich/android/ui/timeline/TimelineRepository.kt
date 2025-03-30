@@ -23,12 +23,14 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.SortedMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
 data class AssetIndex(
     val index: Int,
     val assetId: String,
+    val assetType: AssetType,
 )
 
 @Singleton
@@ -39,8 +41,8 @@ class TimelineRepository @Inject constructor(
     private val timelineBucketsService: TimelineBucketsService,
     private val urlProvider: UrlProvider,
 ) {
-    private val timeBucketsCache: MutableStateFlow<Map<Long, TimeBucketUi>> =
-        MutableStateFlow(emptyMap())
+    private val timeBucketsCache: MutableStateFlow<SortedMap<Long, TimeBucketUi>> =
+        MutableStateFlow(sortedMapOf(reverseOrder()))
     private val imagesDao by lazy { imagesDatabase.imagesDao() }
 
     fun getAssetsCount(): Int = timeBucketsCache.value.values.sumOf { it.count }
@@ -97,15 +99,7 @@ class TimelineRepository @Inject constructor(
             }
         }.onEach {
             if (timeBucketsCache.value.isEmpty()) {
-                timeBucketsCache.value = it.associate {
-                    it.timeStamp to TimeBucketUi(
-                        timeStamp = it.timeStamp,
-                        count = it.count,
-                        formattedDate = it.formattedDate,
-                        index = it.index,
-                        numberOfRows = it.numberOfRows,
-                    )
-                }
+                timeBucketsCache.value = it.associateBy { it.timeStamp }.toSortedMap()
             }
         }
 
@@ -115,8 +109,7 @@ class TimelineRepository @Inject constructor(
 
     suspend fun getAsset(index: Int): AssetUi? {
         return withContext(Dispatchers.Default) {
-            val sortedValues =
-                timeBucketsCache.value.values.sortedByDescending { it.timeStamp }
+            val sortedValues = timeBucketsCache.value.values.sortedByDescending { it.timeStamp }
             var itemsCount = 0
             val bucketsBefore = sortedValues.takeWhile {
                 itemsCount += it.count
@@ -137,39 +130,21 @@ class TimelineRepository @Inject constructor(
 
     suspend fun fetchAssets(bucket: Long) {
         val dbAssets = imagesDao.getAssets(bucket)
-        if (dbAssets.isEmpty()) {
+        val assets = if (dbAssets.isEmpty()) {
             updateAssets(bucket)
             imagesDao.getAssets(bucket)
-                .map {
-                    AssetUi(
-                        id = it.assetId,
-                        url = urlProvider.getThumbnail(it.assetId, it.type),
-                        span = calculateSpan(ratio = calculateRatio(it.width ?: 1, it.height ?: 1)),
-                        type = it.type,
-                    )
-                }
         } else {
-            dbAssets.map {
-                AssetUi(
-                    id = it.assetId,
-                    url = urlProvider.getThumbnail(it.assetId, it.type),
-                    span = calculateSpan(ratio = calculateRatio(it.width ?: 1, it.height ?: 1)),
-                    type = it.type,
-                )
-            }.also {
-                coroutineScope.launch(Dispatchers.IO) {
-                    updateAssets(bucket)
-                }
-            }
-        }.also {
-            val items = adjustSpans(it)
-            val rows = (items.sumOf { it.span } + 3) / 4
-            imagesDao.updateBucket(
-                timestamp = bucket,
-                rowsNumber = rows,
-            )
-            timeBucketsCache.value[bucket]?.items = items
-        }
+            coroutineScope.launch(Dispatchers.IO) { updateAssets(bucket) }
+            dbAssets
+        }.map { it.toAssetUi() }
+
+        val items = adjustSpans(assets)
+        val rows = (items.sumOf { it.span } + 3) / 4
+        imagesDao.updateBucket(
+            timestamp = bucket,
+            rowsNumber = rows,
+        )
+        timeBucketsCache.value[bucket]?.items = items
     }
 
     private suspend fun updateAssets(bucket: Long) {
@@ -221,13 +196,9 @@ class TimelineRepository @Inject constructor(
         return date.format(formatter)
     }
 
-    private fun calculateSpan(ratio: Float) =
-        if (ratio >= 1.5) 4 else if (ratio >= 1.35) 3 else if (ratio >= 1) 2 else 1
-
     suspend fun getIndexOfAsset(assetId: String): AssetIndex {
         return withContext(Dispatchers.Default) {
-            val sortedValues =
-                timeBucketsCache.value.values.sortedByDescending { it.timeStamp }
+            val sortedValues = timeBucketsCache.value.values.toList()
             val bucketsBefore = sortedValues.takeWhile {
                 it.items.indexOfFirst { it.id == assetId } == -1
             }
@@ -239,8 +210,16 @@ class TimelineRepository @Inject constructor(
             AssetIndex(
                 index = numberOfItemsInBucketsBefore + indexInBucket,
                 assetId = assetId,
+                assetType = bucket.items[indexInBucket].type
             )
         }
+    }
+
+    private fun calculateSpan(ratio: Float) = when {
+        ratio >= 1.5 -> 4
+        ratio >= 1.35 -> 3
+        ratio >= 1 -> 2
+        else -> 1
     }
 
     private fun adjustSpans(assets: List<AssetUi>): List<AssetUi> {
@@ -271,5 +250,14 @@ class TimelineRepository @Inject constructor(
 
     private fun calculateRatio(with: Int, height: Int): Float {
         return with.toFloat() / height.toFloat()
+    }
+
+    private fun AssetEntity.toAssetUi(): AssetUi {
+        return AssetUi(
+            id = assetId,
+            url = urlProvider.getThumbnail(assetId, type),
+            span = calculateSpan(calculateRatio(width ?: 1, height ?: 1)),
+            type = type,
+        )
     }
 }

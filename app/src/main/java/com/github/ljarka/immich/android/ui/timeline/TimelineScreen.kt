@@ -85,7 +85,7 @@ data class CalculatedRows(
 fun TimelineScreen(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    onImageClick: (String) -> Unit,
+    onImageClick: (String, AssetType, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollBehavior = enterAlwaysScrollBehavior()
@@ -223,7 +223,7 @@ fun TimelineScreen(
                                 isSelectedItem = selectedAssets.contains(asset.id),
                                 onClick = {
                                     if (selectedAssets.isEmpty()) {
-                                        onImageClick(it)
+                                        onImageClick(asset.id, asset.type, bucket.index + index)
                                     } else {
                                         if (selectedAssets.contains(it)) {
                                             viewModel.deselectAsset(it)
