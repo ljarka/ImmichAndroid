@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
                         navController = navController,
                         startDestination = Screen.Init,
                     ) {
-                        composable<Screen.Init>() {
+                        composable<Screen.Init> {
                             InitScreen(
                                 onInitialized = {
                                     navController.navigate(Screen.Timeline) {

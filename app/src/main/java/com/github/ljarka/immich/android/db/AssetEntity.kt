@@ -4,7 +4,9 @@ import androidx.annotation.Keep
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Keep
 enum class AssetType {
     LOCAL, REMOTE

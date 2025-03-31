@@ -135,11 +135,11 @@ fun TimelineScreen(
                     },
                     navigationIcon = {
                         Image(
-                            painter = painterResource(R.drawable.immich_logo),
+                            painter = painterResource(R.drawable.icon),
                             contentDescription = null,
                             modifier = Modifier
                                 .padding(horizontal = 8.dp)
-                                .size(32.dp),
+                                .size(44.dp),
                         )
                     },
                     scrollBehavior = scrollBehavior,

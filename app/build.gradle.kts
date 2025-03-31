@@ -12,7 +12,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.github.ljarka.immich.android"
+        applicationId = "com.github.ljarka.immich.android2"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

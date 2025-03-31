@@ -34,15 +34,15 @@ fun InitScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(text = "Timeline")
+                    Text(text = "Configuration")
                 },
                 navigationIcon = {
                     Image(
-                        painter = painterResource(R.drawable.immich_logo),
+                        painter = painterResource(R.drawable.icon),
                         contentDescription = null,
                         modifier = Modifier
                             .padding(horizontal = 8.dp)
-                            .size(32.dp),
+                            .size(40.dp),
                     )
                 },
             )
@@ -57,8 +57,10 @@ fun InitScreen(
         ) {
             val viewModel: InitViewModel = hiltViewModel()
             Image(
-                modifier = Modifier.padding(16.dp),
-                painter = painterResource(R.drawable.immich_logo),
+                modifier = Modifier
+                    .padding(16.dp)
+                    .size(200.dp),
+                painter = painterResource(R.drawable.icon),
                 contentDescription = null
             )
 
