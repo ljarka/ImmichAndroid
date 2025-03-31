@@ -113,7 +113,7 @@ class TimelineRepository @Inject constructor(
             var itemsCount = 0
             val bucketsBefore = sortedValues.takeWhile {
                 itemsCount += it.count
-                itemsCount < index
+                itemsCount <= index
             }
             val assetsBefore = bucketsBefore.sumOf { it.count }
             val currentBucketIndex = bucketsBefore.size
