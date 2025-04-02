@@ -373,9 +373,8 @@ private fun GalleryItem(
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     with(sharedTransitionScope) {
-        val scaleSelected: Float = 1f - (0.1f * 1 / asset.span)
         val scale by animateFloatAsState(
-            targetValue = if (isSelectedItem) scaleSelected else 1f,
+            targetValue = if (isSelectedItem) 0.9f else 1f,
             label = "scale"
         )
 
