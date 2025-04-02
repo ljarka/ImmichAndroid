@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -30,17 +31,9 @@ interface ImagesDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMonthBuckets(bucket: List<MonthBucketEntity>)
 
-    @Query(
-        """
-        UPDATE month_buckets 
-        SET rowsNumber = :rowsNumber, 
-            lastUpdate = :lastUpdate
-        WHERE timestamp = :timestamp
-    """
-    )
-    suspend fun updateBucket(
-        timestamp: Long,
-        rowsNumber: Int?,
-        lastUpdate: Long = System.currentTimeMillis()
-    )
+    @Update
+    suspend fun updateBucket(monthBucketEntity: MonthBucketEntity): Int
+
+    @Query("SELECT * FROM month_buckets where timestamp = :timestamp")
+    suspend fun getBucket(timestamp: Long): MonthBucketEntity?
 }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -26,6 +27,7 @@ import java.util.Locale
 import java.util.SortedMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.coroutineContext
 
 data class AssetIndex(
     val index: Int,
@@ -43,6 +45,7 @@ class TimelineRepository @Inject constructor(
 ) {
     private val timeBucketsCache: MutableStateFlow<SortedMap<Long, TimeBucketUi>> =
         MutableStateFlow(sortedMapOf(reverseOrder()))
+    private val itemsCache = mutableMapOf<Long, List<AssetUi>>()
     private val imagesDao by lazy { imagesDatabase.imagesDao() }
 
     fun getAssetsCount(): Int = timeBucketsCache.value.values.sumOf { it.count }
@@ -95,12 +98,13 @@ class TimelineRepository @Inject constructor(
                     formattedDate = formatDate(Instant.ofEpochMilli(bucketItem.timestamp)),
                     numberOfRows = bucketItem.rowsNumber ?: 0,
                     index = bucketItem.index,
+                    lastUpdate = bucketItem.lastUpdate,
+                    items = timeBucketsCache.value[bucketItem.timestamp]?.items?.takeIf { it.isNotEmpty() }
+                        ?: itemsCache.remove(bucketItem.timestamp) ?: emptyList(),
                 )
             }
         }.onEach {
-            if (timeBucketsCache.value.isEmpty()) {
-                timeBucketsCache.value = it.associateBy { it.timeStamp }.toSortedMap()
-            }
+            timeBucketsCache.value = it.associateBy { it.timeStamp }.toSortedMap()
         }
 
     fun getAsset(bucket: Long, position: Int): AssetUi? {
@@ -128,23 +132,34 @@ class TimelineRepository @Inject constructor(
         }
     }
 
-    suspend fun fetchAssets(bucket: Long) {
+    suspend fun fetchAssets(bucket: Long): Boolean {
+        if (!coroutineContext.isActive) return false
         val dbAssets = imagesDao.getAssets(bucket)
         val assets = if (dbAssets.isEmpty()) {
+            if (!coroutineContext.isActive) return false
             updateAssets(bucket)
             imagesDao.getAssets(bucket)
         } else {
-            coroutineScope.launch(Dispatchers.IO) { updateAssets(bucket) }
+            coroutineScope.launch(Dispatchers.IO) {
+                if (coroutineContext.isActive) updateAssets(bucket)
+            }
             dbAssets
         }.map { it.toAssetUi() }
 
+        if (!coroutineContext.isActive) return false
         val items = adjustSpans(assets)
+        itemsCache.put(bucket, items)
         val rows = (items.sumOf { it.span } + 3) / 4
-        imagesDao.updateBucket(
-            timestamp = bucket,
-            rowsNumber = rows,
-        )
-        timeBucketsCache.value[bucket]?.items = items
+        val dbBucket = imagesDao.getBucket(bucket)
+        dbBucket?.let {
+            imagesDao.updateBucket(
+                dbBucket.copy(
+                    rowsNumber = rows,
+                    lastUpdate = System.currentTimeMillis()
+                )
+            )
+        }
+        return true
     }
 
     private suspend fun updateAssets(bucket: Long) {
@@ -194,25 +209,6 @@ class TimelineRepository @Inject constructor(
         val date = instant.atZone(ZoneId.systemDefault())
         val formatter = DateTimeFormatter.ofPattern("MMMM, yyyy", Locale.ENGLISH)
         return date.format(formatter)
-    }
-
-    suspend fun getIndexOfAsset(assetId: String): AssetIndex {
-        return withContext(Dispatchers.Default) {
-            val sortedValues = timeBucketsCache.value.values.toList()
-            val bucketsBefore = sortedValues.takeWhile {
-                it.items.indexOfFirst { it.id == assetId } == -1
-            }
-            val currentBucketIndex = bucketsBefore.size
-            val numberOfItemsInBucketsBefore = bucketsBefore.sumOf { it.count }
-
-            val bucket = sortedValues[currentBucketIndex]
-            val indexInBucket = bucket.items.indexOfFirst { it.id == assetId }
-            AssetIndex(
-                index = numberOfItemsInBucketsBefore + indexInBucket,
-                assetId = assetId,
-                assetType = bucket.items[indexInBucket].type
-            )
-        }
     }
 
     private fun calculateSpan(ratio: Float) = when {

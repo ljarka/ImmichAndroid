@@ -1,17 +1,18 @@
 package com.github.ljarka.immich.android.ui.timeline
 
+import android.util.LruCache
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 enum class AssetLoadingState {
@@ -25,7 +26,11 @@ class TimelineViewModel @Inject constructor(
 
     private val fixedSpans = mutableSetOf<Long>()
     private val _assetState = mutableMapOf<Long, MutableStateFlow<AssetLoadingState>>()
-    private val assetFetchingJobs = mutableMapOf<Long, Job>()
+    private val assetFetchingJobs = object : LruCache<Long, Job>(5) {
+        override fun entryRemoved(evicted: Boolean, key: Long?, oldValue: Job?, newValue: Job?) {
+            oldValue?.cancel()
+        }
+    }
     private val _selectedAssets = MutableStateFlow<Set<String>>(emptySet())
     val selectedAssets: StateFlow<Set<String>> = _selectedAssets.asStateFlow()
 
@@ -49,12 +54,18 @@ class TimelineViewModel @Inject constructor(
     fun fetchAssets(bucket: Long) {
         val job = assetFetchingJobs[bucket]
 
-        if (job == null || !job.isActive) {
-            assetFetchingJobs[bucket] = viewModelScope.launch(Dispatchers.IO) {
+        if (job == null) {
+            assetFetchingJobs.put(bucket, viewModelScope.async(Dispatchers.IO) {
                 _assetState[bucket]?.value = AssetLoadingState.LOADING
-                timelineRepository.fetchAssets(bucket)
-                _assetState[bucket]?.value = AssetLoadingState.LOADED
-            }
+                val fetched = timelineRepository.fetchAssets(bucket)
+
+                if (fetched) {
+                    _assetState[bucket]?.value = AssetLoadingState.LOADED
+                } else {
+                    _assetState[bucket]?.value = AssetLoadingState.DEFAULT
+                }
+                assetFetchingJobs.remove(bucket)
+            })
         }
     }
 

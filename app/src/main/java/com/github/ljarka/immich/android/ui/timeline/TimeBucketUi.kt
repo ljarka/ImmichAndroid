@@ -6,5 +6,6 @@ data class TimeBucketUi(
     val formattedDate: String = "",
     val index: Int = 0,
     val numberOfRows: Int? = null,
-    var items: List<AssetUi> = emptyList(),
+    val items: List<AssetUi> = emptyList(),
+    val lastUpdate: Long = 0,
 )
