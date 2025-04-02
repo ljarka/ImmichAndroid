@@ -23,8 +23,10 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Calendar
 import java.util.Locale
 import java.util.SortedMap
+import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
@@ -60,21 +62,65 @@ class TimelineRepository @Inject constructor(
         val localImagesProvider = LocalImagesProvider()
         val dbBuckets = imagesDao.getMonthBuckets().firstOrNull()
         val dbRowsNumbers = dbBuckets?.associate { it.timestamp to it.rowsNumber }
-        return timelineBucketsService.getTimeBuckets()
-            .map {
-                val instant = Instant.parse(it.timeBucket)
-                val bucketTime = instant.atZone(ZoneId.systemDefault())
 
-                val localImagesCount = localImagesProvider.getImagesCountForMonth(
-                    context = context,
-                    month = bucketTime.month.ordinal,
-                    year = bucketTime.year
+        val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        calendar.set(Calendar.DAY_OF_MONTH, 1)
+
+        val buckets = mutableListOf<TimeBucket>()
+        val localBuckets = (0..23) // two years from now interval
+            .map {
+                calendar.add(Calendar.MONTH, -it)
+                val time = calendar.toInstant().toString()
+                TimeBucket(
+                    timeBucket = time,
+                    count = localImagesProvider.getImagesCountForMonth(
+                        context = context,
+                        month = calendar.get(Calendar.MONTH),
+                        year = calendar.get(Calendar.YEAR),
+                    )
                 )
-                val timestamp = instant.toEpochMilli()
+            }.associateBy { it.timeBucket }
+        val remoteBuckets = timelineBucketsService.getTimeBuckets()
+            .associateBy { it.timeBucket }
+
+        localBuckets.values.forEach {
+            val count = it.count + (remoteBuckets[it.timeBucket]?.count ?: 0)
+            if (count > 0) {
+                buckets.add(
+                    TimeBucket(
+                        timeBucket = it.timeBucket,
+                        count = count
+                    )
+                )
+            }
+        }
+
+        remoteBuckets.values.forEach {
+            if (!localBuckets.containsKey(it.timeBucket)) {
+                val count = it.count + (localBuckets[it.timeBucket]?.count ?: 0)
+
+                if (count > 0) {
+                    buckets.add(
+                        TimeBucket(
+                            timeBucket = it.timeBucket,
+                            count = count
+                        )
+                    )
+                }
+            }
+        }
+
+        return buckets
+            .map {
+                val timestamp = Instant.parse(it.timeBucket).toEpochMilli()
 
                 MonthBucketEntity(
                     timestamp = timestamp,
-                    count = localImagesCount + it.count,
+                    count = it.count,
                     rowsNumber = dbRowsNumbers?.get(timestamp)
                 )
             }.runningFoldIndexed(
