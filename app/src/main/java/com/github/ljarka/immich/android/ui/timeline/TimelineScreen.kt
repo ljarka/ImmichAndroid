@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +42,9 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults.enterAlwaysScrollBehavior
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.material3.ripple
@@ -147,114 +151,148 @@ fun TimelineScreen(
             }
         ) { innerPadding ->
             val orientation = LocalConfiguration.current.orientation
+            val pullToRefreshState = rememberPullToRefreshState()
 
-            LazyVerticalGrid(
-                columns = if (orientation == ORIENTATION_PORTRAIT) GridCells.Fixed(4) else GridCells.Fixed(
-                    8
-                ),
-                state = gridState,
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(4.dp)
-            ) {
-                state.value.forEach { bucket ->
-                    item(span = { GridItemSpan(maxLineSpan) }, key = bucket.timeStamp) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .wrapContentHeight()
-                                .padding(horizontal = 8.dp, vertical = 16.dp),
-                        ) {
-                            Text(
-                                text = bucket.formattedDate,
-                                style = MaterialTheme.typography.headlineSmall,
-                            )
-                        }
-                    }
-
-                    val rows: CalculatedRows? =
-                        if (bucket.numberOfRows != null && bucket.numberOfRows != 0) calculateRowsSizes(
-                            bucket.numberOfRows,
-                            bucket.count
-                        ) else null
-
-                    items(
-                        count = bucket.count,
-                        span = { index ->
-                            val defaultSpan = GridItemSpan(2)
-                            if (viewModel.isFixedSpan(bucket.timeStamp)) {
-                                defaultSpan
-                            } else {
-                                val item = viewModel.getAsset(bucket.timeStamp, index)
-                                calculateSpan(index, item, rows) ?: defaultSpan.also {
-                                    viewModel.setFixedSpan(bucket.timeStamp)
-                                }
-                            }
-                        }, key = { index -> "${bucket.timeStamp}_$index".hashCode() }) { index ->
-
-                        val itemLifecycleOwner = remember { ItemLifecycleOwner() }
-                        DisposableEffect(Unit) {
-                            itemLifecycleOwner.start()
-                            onDispose {
-                                itemLifecycleOwner.stop()
-                            }
-                        }
-                        val asset = viewModel.getAsset(bucket.timeStamp, index)
-                        val coroutineScope = rememberCoroutineScope()
-                        val assetLoading by viewModel.getAssetLoadingState(bucket.timeStamp)
-                            .collectAsStateWithLifecycle(lifecycleOwner = itemLifecycleOwner)
-                        val selectedAssets by viewModel.selectedAssets.collectAsStateWithLifecycle(
-                            lifecycleOwner = itemLifecycleOwner
+            if (state.value.loadingState == LoadingState.LOADING) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(64.dp)
+                    )
+                }
+            } else {
+                PullToRefreshBox(
+                    isRefreshing = state.value.loadingState == LoadingState.REFRESHING,
+                    onRefresh = {
+                        viewModel.refresh()
+                    },
+                    modifier = modifier,
+                    state = pullToRefreshState,
+                    indicator = {
+                        Indicator(
+                            modifier = Modifier.align(Alignment.TopCenter),
+                            isRefreshing = state.value.loadingState == LoadingState.REFRESHING,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            state = pullToRefreshState
                         )
-
-                        if (asset == null) {
-                            if (assetLoading != AssetLoadingState.LOADING) {
-                                LaunchedEffect(bucket.timeStamp) {
-                                    viewModel.fetchAssets(bucket.timeStamp)
+                    },
+                ) {
+                    LazyVerticalGrid(
+                        columns = if (orientation == ORIENTATION_PORTRAIT) GridCells.Fixed(4) else GridCells.Fixed(
+                            8
+                        ),
+                        state = gridState,
+                        modifier = modifier
+                            .fillMaxSize()
+                            .padding(innerPadding),
+                        contentPadding = PaddingValues(4.dp)
+                    ) {
+                        state.value.items.forEach { bucket ->
+                            item(span = { GridItemSpan(maxLineSpan) }, key = bucket.timeStamp) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .wrapContentHeight()
+                                        .padding(horizontal = 8.dp, vertical = 16.dp),
+                                ) {
+                                    Text(
+                                        text = bucket.formattedDate,
+                                        style = MaterialTheme.typography.headlineSmall,
+                                    )
                                 }
                             }
-                            PlaceHolder(modifier = Modifier.padding(4.dp))
-                        } else {
-                            GalleryItem(
-                                asset = asset,
-                                sharedTransitionScope = sharedTransitionScope,
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                isSelectedItem = selectedAssets.contains(asset.id),
-                                onClick = {
-                                    if (selectedAssets.isEmpty()) {
-                                        onImageClick(asset.id, asset.type, bucket.index + index)
+
+                            val rows: CalculatedRows? =
+                                if (bucket.numberOfRows != null && bucket.numberOfRows != 0) calculateRowsSizes(
+                                    bucket.numberOfRows,
+                                    bucket.count
+                                ) else null
+
+                            items(
+                                count = bucket.count,
+                                span = { index ->
+                                    val defaultSpan = GridItemSpan(2)
+                                    if (viewModel.isFixedSpan(bucket.timeStamp)) {
+                                        defaultSpan
                                     } else {
-                                        if (selectedAssets.contains(it)) {
-                                            viewModel.deselectAsset(it)
-                                            if (viewModel.selectedAssets.value.isEmpty()) {
-                                                coroutineScope.launch {
-                                                    scaffoldState.bottomSheetState.hide()
-                                                }
-                                            }
-                                        } else {
-                                            viewModel.selectAsset(it)
+                                        val item = viewModel.getAsset(bucket.timeStamp, index)
+                                        calculateSpan(index, item, rows) ?: defaultSpan.also {
+                                            viewModel.setFixedSpan(bucket.timeStamp)
                                         }
                                     }
                                 },
-                                isInEditMode = selectedAssets.isNotEmpty(),
-                                onLongClick = {
-                                    viewModel.selectAsset(it)
-                                    coroutineScope.launch {
-                                        scaffoldState.bottomSheetState.expand()
+                                key = { index -> "${bucket.timeStamp}_$index".hashCode() }) { index ->
+
+                                val itemLifecycleOwner = remember { ItemLifecycleOwner() }
+                                DisposableEffect(Unit) {
+                                    itemLifecycleOwner.start()
+                                    onDispose {
+                                        itemLifecycleOwner.stop()
                                     }
                                 }
-                            )
+                                val asset = viewModel.getAsset(bucket.timeStamp, index)
+                                val coroutineScope = rememberCoroutineScope()
+                                val assetLoading by viewModel.getAssetLoadingState(bucket.timeStamp)
+                                    .collectAsStateWithLifecycle(lifecycleOwner = itemLifecycleOwner)
+                                val selectedAssets by viewModel.selectedAssets.collectAsStateWithLifecycle(
+                                    lifecycleOwner = itemLifecycleOwner
+                                )
+
+                                if (asset == null) {
+                                    if (assetLoading != AssetLoadingState.LOADING) {
+                                        LaunchedEffect(bucket.timeStamp) {
+                                            viewModel.fetchAssets(bucket.timeStamp)
+                                        }
+                                    }
+                                    PlaceHolder(modifier = Modifier.padding(4.dp))
+                                } else {
+                                    GalleryItem(
+                                        asset = asset,
+                                        sharedTransitionScope = sharedTransitionScope,
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        isSelectedItem = selectedAssets.contains(asset.id),
+                                        onClick = {
+                                            if (selectedAssets.isEmpty()) {
+                                                onImageClick(
+                                                    asset.id,
+                                                    asset.type,
+                                                    bucket.index + index
+                                                )
+                                            } else {
+                                                if (selectedAssets.contains(it)) {
+                                                    viewModel.deselectAsset(it)
+                                                    if (viewModel.selectedAssets.value.isEmpty()) {
+                                                        coroutineScope.launch {
+                                                            scaffoldState.bottomSheetState.hide()
+                                                        }
+                                                    }
+                                                } else {
+                                                    viewModel.selectAsset(it)
+                                                }
+                                            }
+                                        },
+                                        isInEditMode = selectedAssets.isNotEmpty(),
+                                        onLongClick = {
+                                            viewModel.selectAsset(it)
+                                            coroutineScope.launch {
+                                                scaffoldState.bottomSheetState.expand()
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+
                         }
                     }
-
                 }
             }
         }
 
-        if (state.value.isNotEmpty()) {
+        if (state.value.items.isNotEmpty()) {
             FastScrollComponent(
-                buckets = state.value,
+                buckets = state.value.items,
                 gridState = gridState,
             )
         }

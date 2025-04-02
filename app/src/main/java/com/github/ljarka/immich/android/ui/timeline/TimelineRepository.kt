@@ -256,4 +256,8 @@ class TimelineRepository @Inject constructor(
             type = type,
         )
     }
+
+    suspend fun refresh() {
+        imagesDao.insertMonthBuckets(loadBucketsInfoFromServerAndDisk())
+    }
 }

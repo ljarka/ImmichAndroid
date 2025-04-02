@@ -11,8 +11,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 enum class AssetLoadingState {
@@ -23,7 +25,13 @@ enum class AssetLoadingState {
 class TimelineViewModel @Inject constructor(
     val timelineRepository: TimelineRepository,
 ) : ViewModel() {
-
+    private val loadingState = MutableStateFlow(LoadingState.DEFAULT)
+    val state = combine(timelineRepository.getTimeBuckets(), loadingState) { items, loadingState ->
+        BucketsState(
+            loadingState = loadingState,
+            items = items,
+        )
+    }.stateIn(viewModelScope, started = SharingStarted.WhileSubscribed(5_000), BucketsState())
     private val fixedSpans = mutableSetOf<Long>()
     private val _assetState = mutableMapOf<Long, MutableStateFlow<AssetLoadingState>>()
     private val assetFetchingJobs = object : LruCache<Long, Job>(5) {
@@ -43,9 +51,6 @@ class TimelineViewModel @Inject constructor(
     fun setFixedSpan(bucket: Long) {
         fixedSpans.add(bucket)
     }
-
-    val state = timelineRepository.getTimeBuckets()
-        .stateIn(viewModelScope, started = SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun getAsset(bucket: Long, position: Int): AssetUi? {
         return timelineRepository.getAsset(bucket, position)
@@ -87,5 +92,13 @@ class TimelineViewModel @Inject constructor(
 
     fun clearSelection() {
         _selectedAssets.value = emptySet()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            loadingState.value = LoadingState.REFRESHING
+            timelineRepository.refresh()
+            loadingState.value = LoadingState.LOADED
+        }
     }
 }
