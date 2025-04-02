@@ -65,6 +65,7 @@ class TimelineRepository @Inject constructor(
 
         val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
         calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.add(Calendar.MONTH, 1)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
@@ -73,7 +74,7 @@ class TimelineRepository @Inject constructor(
         val buckets = mutableListOf<TimeBucket>()
         val localBuckets = (0..23) // two years from now interval
             .map {
-                calendar.add(Calendar.MONTH, -it)
+                calendar.add(Calendar.MONTH, -1)
                 val time = calendar.toInstant().toString()
                 TimeBucket(
                     timeBucket = time,
@@ -83,12 +84,14 @@ class TimelineRepository @Inject constructor(
                         year = calendar.get(Calendar.YEAR),
                     )
                 )
-            }.associateBy { it.timeBucket }
+            }.associateBy { Instant.parse(it.timeBucket).toEpochMilli() }
+
         val remoteBuckets = timelineBucketsService.getTimeBuckets()
-            .associateBy { it.timeBucket }
+            .associateBy { Instant.parse(it.timeBucket).toEpochMilli() }
 
         localBuckets.values.forEach {
-            val count = it.count + (remoteBuckets[it.timeBucket]?.count ?: 0)
+            val timestamp = Instant.parse(it.timeBucket).toEpochMilli()
+            val count = it.count + (remoteBuckets[timestamp]?.count ?: 0)
             if (count > 0) {
                 buckets.add(
                     TimeBucket(
@@ -100,8 +103,9 @@ class TimelineRepository @Inject constructor(
         }
 
         remoteBuckets.values.forEach {
-            if (!localBuckets.containsKey(it.timeBucket)) {
-                val count = it.count + (localBuckets[it.timeBucket]?.count ?: 0)
+            val timestamp = Instant.parse(it.timeBucket).toEpochMilli()
+            if (!localBuckets.containsKey(timestamp)) {
+                val count = it.count + (localBuckets[timestamp]?.count ?: 0)
 
                 if (count > 0) {
                     buckets.add(
