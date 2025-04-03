@@ -56,18 +56,20 @@ class TimelineViewModel @Inject constructor(
         return timelineRepository.getAsset(bucket, position)
     }
 
+    @Synchronized
     fun fetchAssets(bucket: Long) {
         val job = assetFetchingJobs[bucket]
 
         if (job == null) {
             assetFetchingJobs.put(bucket, viewModelScope.launch(Dispatchers.IO) {
-                _assetState[bucket]?.value = AssetLoadingState.LOADING
+                val loadingState = _assetState[bucket]
+                loadingState?.value = AssetLoadingState.LOADING
                 val fetched = timelineRepository.fetchAssets(bucket)
 
                 if (fetched) {
-                    _assetState[bucket]?.value = AssetLoadingState.LOADED
+                    loadingState?.value = AssetLoadingState.LOADED
                 } else {
-                    _assetState[bucket]?.value = AssetLoadingState.DEFAULT
+                    loadingState?.value = AssetLoadingState.DEFAULT
                 }
                 assetFetchingJobs.remove(bucket)
             })
