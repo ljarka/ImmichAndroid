@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +14,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 enum class AssetLoadingState {
@@ -33,7 +33,7 @@ class TimelineViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, started = SharingStarted.WhileSubscribed(5_000), BucketsState())
     private val fixedSpans = mutableSetOf<Long>()
-    private val _assetState = mutableMapOf<Long, MutableStateFlow<AssetLoadingState>>()
+    private val _assetState = ConcurrentHashMap<Long, MutableStateFlow<AssetLoadingState>>()
     private val assetFetchingJobs = object : LruCache<Long, Job>(5) {
         override fun entryRemoved(evicted: Boolean, key: Long?, oldValue: Job?, newValue: Job?) {
             oldValue?.cancel()
@@ -60,7 +60,7 @@ class TimelineViewModel @Inject constructor(
         val job = assetFetchingJobs[bucket]
 
         if (job == null) {
-            assetFetchingJobs.put(bucket, viewModelScope.async(Dispatchers.IO) {
+            assetFetchingJobs.put(bucket, viewModelScope.launch(Dispatchers.IO) {
                 _assetState[bucket]?.value = AssetLoadingState.LOADING
                 val fetched = timelineRepository.fetchAssets(bucket)
 
